@@ -141,3 +141,12 @@ class RadarRepository:
     def get_alert(self, alert_id: int) -> Alert | None:
         with self._session_factory() as session:
             return session.scalar(select(Alert).where(Alert.id == alert_id))
+
+    def get_digest_candidates(self, *, limit: int = 50) -> list[Alert]:
+        """Return alerts ranked by score descending, up to *limit* rows."""
+        with self._session_factory() as session:
+            return list(
+                session.scalars(
+                    select(Alert).order_by(Alert.score.desc()).limit(limit)
+                )
+            )

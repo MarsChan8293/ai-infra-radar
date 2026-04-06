@@ -51,7 +51,7 @@ def test_reload_with_valid_config(tmp_path: Path) -> None:
     body = resp.json()
     assert body["status"] == "reloaded"
     assert body["timezone"] == "UTC"
-    assert body["jobs"] == []
+    assert body["jobs"] == ["daily_digest"]
 
 
 def test_reload_updates_app_state(tmp_path: Path) -> None:
@@ -119,7 +119,7 @@ def test_reload_rebuilds_runtime_with_new_jobs(tmp_path: Path) -> None:
         assert app.state.repo is not None
         assert app.state.repo is not first_repo
         assert app.state.settings.app.timezone == "Asia/Singapore"
-        assert set(app.state.scheduler.known_jobs()) == {"official_pages", "github_burst"}
+        assert set(app.state.scheduler.known_jobs()) == {"official_pages", "github_burst", "daily_digest"}
 
 
 def test_reload_with_invalid_config_returns_422(tmp_path: Path) -> None:

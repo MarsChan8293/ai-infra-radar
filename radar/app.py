@@ -18,6 +18,7 @@ from radar.core.config import Settings, load_settings
 from radar.core.db import create_engine_and_session_factory, init_db
 from radar.core.repositories import RadarRepository
 from radar.core.scheduler import RadarScheduler
+from radar.jobs.daily_digest import run_daily_digest_job
 from radar.jobs.github_burst import run_github_burst_job
 from radar.jobs.official_pages import run_official_pages_job
 from radar.sources.github.client import GitHubClient
@@ -112,6 +113,19 @@ def build_runtime(config_path: Path) -> RuntimeState:
             )
 
         scheduler.register("github_burst", _run_github_burst, minutes=15)
+
+    def _run_daily_digest() -> int:
+        channels = _build_channels(settings)
+
+        def _dispatch(payload: dict) -> None:
+            if "webhook" in channels and dispatcher._send_webhook is not None:
+                dispatcher._send_webhook(str(channels["webhook"]), payload)
+            if "email" in channels and dispatcher._send_email is not None:
+                dispatcher._send_email(payload)
+
+        return run_daily_digest_job(repo, dispatch=_dispatch)
+
+    scheduler.register("daily_digest", _run_daily_digest, hours=24)
 
     return RuntimeState(
         settings=settings,
