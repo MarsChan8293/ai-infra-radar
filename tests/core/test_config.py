@@ -1,6 +1,11 @@
 from pathlib import Path
 
+from typer.testing import CliRunner
+
+from radar.cli import cli
 from radar.core.config import load_settings
+
+FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
 
 def test_load_settings_reads_yaml(tmp_path: Path) -> None:
@@ -50,3 +55,25 @@ sources:
     page = settings.sources.official_pages.pages[0]
     assert str(page.url) == "https://api-docs.deepseek.com/"
     assert page.whitelist_keywords == ["release", "update"]
+
+
+def test_load_settings_reads_minimal_fixture() -> None:
+    """load_settings works with the checked-in minimal.yaml fixture."""
+    settings = load_settings(FIXTURES_DIR / "minimal.yaml")
+
+    assert settings.app.timezone == "Asia/Singapore"
+    assert settings.storage.path == "./data/radar.db"
+    assert settings.channels.webhook.enabled is True
+
+    page = settings.sources.official_pages.pages[0]
+    assert str(page.url) == "https://api-docs.deepseek.com/"
+    assert page.whitelist_keywords == ["release", "update"]
+
+
+def test_validate_config_cli_command() -> None:
+    """validate-config CLI command prints 'config ok' for the minimal fixture."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["validate-config", str(FIXTURES_DIR / "minimal.yaml")])
+
+    assert result.exit_code == 0
+    assert "config ok" in result.output
