@@ -26,7 +26,7 @@ def extract_release_signal(
         title = h1.get_text(strip=True)
     else:
         title_tag = soup.find("title")
-        title = title_tag.get_text(strip=True) if title_tag else url
+        title = (title_tag.get_text(strip=True) if title_tag else "") or url
 
     html_lower = html.lower()
     matched_keywords = [kw for kw in keywords if kw.lower() in html_lower]

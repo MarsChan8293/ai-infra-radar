@@ -2,13 +2,12 @@
 
 TDD order:
   1. test_extract_release_signal – unit test for the extractor
-  2. test_run_official_pages_job_creates_alert – end-to-end with fake repo + fake alert service
+  2. test_extract_title_falls_back_to_url_when_title_empty – extractor fallback
+  3. test_run_official_pages_job_creates_alert – end-to-end with fake repo + fake alert service
 """
 from __future__ import annotations
 
 from pathlib import Path
-
-import pytest
 
 
 FIXTURE_HTML = (
@@ -20,7 +19,7 @@ FIXTURE_HTML = (
 
 
 # ---------------------------------------------------------------------------
-# Test 1: extractor unit test (written BEFORE the extractor exists)
+# Test 1: extractor unit test
 # ---------------------------------------------------------------------------
 
 def test_extract_release_signal_title_and_keywords() -> None:
@@ -38,7 +37,23 @@ def test_extract_release_signal_title_and_keywords() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 2: end-to-end job test with fake repo + fake alert service
+# Test 2: extractor fallback: <h1> missing, <title> empty → url
+# ---------------------------------------------------------------------------
+
+def test_extract_title_falls_back_to_url_when_title_empty() -> None:
+    """When <h1> is absent and <title> is empty/whitespace, title must equal the url."""
+    from radar.sources.official_pages.extractor import extract_release_signal
+
+    html = "<html><head><title>   </title></head><body></body></html>"
+    url = "https://example.com/release"
+
+    signal = extract_release_signal(html=html, url=url, keywords=[])
+
+    assert signal["title"] == url
+
+
+# ---------------------------------------------------------------------------
+# Test 3: end-to-end job test with fake repo + fake alert service
 # ---------------------------------------------------------------------------
 
 class _FakeAlertService:
@@ -53,7 +68,8 @@ class _FakeAlertService:
 
 
 def test_run_official_pages_job_creates_alert(tmp_path: Path) -> None:
-    """run_official_pages_job must call alert_service.process_official_page and return created == 1."""
+    """run_official_pages_job(page_config, fetch_html, repository, alert_service) must
+    call alert_service.process_official_page and return created == 1."""
     from radar.core.db import create_engine_and_session_factory, init_db
     from radar.core.repositories import RadarRepository
     from radar.core.config import OfficialPageEntry
@@ -73,10 +89,10 @@ def test_run_official_pages_job_creates_alert(tmp_path: Path) -> None:
     )
 
     result = run_official_pages_job(
-        pages=[page_config],
-        repo=repo,
-        alert_service=alert_service,
-        fetch_html=lambda url: html,
+        page_config,
+        lambda url: html,
+        repo,
+        alert_service,
     )
 
     assert result["created"] == 1
