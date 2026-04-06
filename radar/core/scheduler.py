@@ -15,8 +15,8 @@ class RadarScheduler:
     for the next scheduled run.
     """
 
-    def __init__(self) -> None:
-        self._scheduler: BackgroundScheduler = BackgroundScheduler(timezone="UTC")
+    def __init__(self, *, timezone: str = "UTC") -> None:
+        self._scheduler: BackgroundScheduler = BackgroundScheduler(timezone=timezone)
         self._job_funcs: dict[str, Callable] = {}
 
     def register(self, name: str, func: Callable, **trigger_kwargs: object) -> None:
@@ -45,6 +45,13 @@ class RadarScheduler:
         threading.Thread(
             target=self._job_funcs[job_name], daemon=True, name=f"radar-job-{job_name}"
         ).start()
+        return True
+
+    def run(self, job_name: str) -> bool:
+        """Run *job_name* synchronously in the current thread."""
+        if job_name not in self._job_funcs:
+            return False
+        self._job_funcs[job_name]()
         return True
 
     def start(self) -> None:

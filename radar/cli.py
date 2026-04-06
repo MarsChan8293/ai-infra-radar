@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import typer
 
+from radar.app import build_runtime
 from radar.core.config import load_settings
 
 cli = typer.Typer(no_args_is_help=True)
@@ -24,38 +27,19 @@ def run_job(
     config: Path = typer.Option(..., "--config", help="Path to radar.yaml"),
 ) -> None:
     """Trigger a named job immediately using the configured sources."""
-    _KNOWN_JOBS = {"official_pages", "github_burst"}
-    if job_name not in _KNOWN_JOBS:
-        typer.echo(f"error: unknown job {job_name!r}. known jobs: {sorted(_KNOWN_JOBS)}", err=True)
-        raise typer.Exit(1)
-
-    settings = load_settings(config)
-
-    from radar.core.db import create_engine_and_session_factory, init_db
-    from radar.core.repositories import RadarRepository
-
-    engine, sf = create_engine_and_session_factory(settings.storage.path)
-    init_db(engine)
-    repo = RadarRepository(sf)
-
-    if job_name == "official_pages":
-        if not settings.sources.official_pages.enabled:
-            typer.echo("official_pages source is not enabled in config", err=True)
+    runtime = build_runtime(config)
+    try:
+        known_jobs = runtime.scheduler.known_jobs()
+        if job_name not in known_jobs:
+            typer.echo(
+                f"error: unknown job {job_name!r}. known jobs: {sorted(known_jobs)}",
+                err=True,
+            )
             raise typer.Exit(1)
-        import httpx
-
-        from radar.jobs.official_pages import run_official_pages_job
-
-        total = 0
-        for page in settings.sources.official_pages.pages:
-            total += run_official_pages_job(page, lambda url: httpx.get(url, timeout=30).text, repo, None)
-        typer.echo(f"official_pages: {total} alert(s) created")
-
-    elif job_name == "github_burst":
-        if not settings.sources.github.enabled:
-            typer.echo("github source is not enabled in config", err=True)
-            raise typer.Exit(1)
-        typer.echo("github_burst: full client wiring pending Task 8")
+        runtime.scheduler.run(job_name)
+        typer.echo(f"{job_name}: executed")
+    finally:
+        runtime.engine.dispose()
 
 
 @cli.command("backfill-source")
@@ -87,7 +71,8 @@ def send_test_notification(
         import httpx
 
         payload = {"text": "AI Infra Radar: test notification"}
-        httpx.post(str(ch.url), json=payload, timeout=10)
+        response = httpx.post(str(ch.url), json=payload, timeout=10)
+        response.raise_for_status()
         typer.echo(f"test notification sent to {ch.url}")
     elif channel == "email":
         typer.echo("email test notification not yet implemented")

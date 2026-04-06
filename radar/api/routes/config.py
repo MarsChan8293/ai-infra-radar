@@ -20,12 +20,16 @@ def reload_config(request: Request) -> dict:
             detail="no config path configured; set RADAR_CONFIG env var before starting",
         )
 
-    from radar.core.config import load_settings
+    from radar.app import apply_runtime, build_runtime
 
     try:
-        settings = load_settings(config_path)
+        runtime = build_runtime(config_path)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    request.app.state.settings = settings
-    return {"status": "reloaded", "timezone": settings.app.timezone}
+    apply_runtime(request.app, runtime)
+    return {
+        "status": "reloaded",
+        "timezone": runtime.settings.app.timezone,
+        "jobs": runtime.scheduler.known_jobs(),
+    }

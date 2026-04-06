@@ -1,10 +1,10 @@
+"""Repository helpers for Radar persistence and query access."""
+from __future__ import annotations
+
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from radar.core.models import Alert, DeliveryLog, Entity, JobRun, Observation
-
-
-
 
 
 class RadarRepository:

@@ -51,6 +51,7 @@ def test_reload_with_valid_config(tmp_path: Path) -> None:
     body = resp.json()
     assert body["status"] == "reloaded"
     assert body["timezone"] == "UTC"
+    assert body["jobs"] == []
 
 
 def test_reload_updates_app_state(tmp_path: Path) -> None:
@@ -68,6 +69,57 @@ def test_reload_updates_app_state(tmp_path: Path) -> None:
         client.post("/config/reload")
         assert app.state.settings is not None
         assert app.state.settings.app.timezone == "UTC"
+        assert app.state.repo is not None
+        assert app.state.scheduler is not None
+
+
+def test_reload_rebuilds_runtime_with_new_jobs(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(yaml.dump(_minimal_config(str(tmp_path / "radar.db"))))
+
+    app = create_app()
+    app.state.config_path = config_path
+
+    with TestClient(app) as client:
+        first = client.post("/config/reload")
+        assert first.status_code == 200
+        first_repo = app.state.repo
+
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "app": {"timezone": "Asia/Singapore"},
+                    "storage": {"path": str(tmp_path / "radar-updated.db")},
+                    "channels": {
+                        "webhook": {"enabled": False},
+                        "email": {"enabled": False},
+                    },
+                    "sources": {
+                        "github": {
+                            "enabled": True,
+                            "token": "ghp_example",
+                            "queries": ["sglang"],
+                        },
+                        "official_pages": {
+                            "enabled": True,
+                            "pages": [
+                                {
+                                    "url": "https://api-docs.deepseek.com/",
+                                    "whitelist_keywords": ["release"],
+                                }
+                            ],
+                        },
+                    },
+                }
+            )
+        )
+
+        second = client.post("/config/reload")
+        assert second.status_code == 200
+        assert app.state.repo is not None
+        assert app.state.repo is not first_repo
+        assert app.state.settings.app.timezone == "Asia/Singapore"
+        assert set(app.state.scheduler.known_jobs()) == {"official_pages", "github_burst"}
 
 
 def test_reload_with_invalid_config_returns_422(tmp_path: Path) -> None:

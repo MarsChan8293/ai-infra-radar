@@ -1,12 +1,155 @@
-from contextlib import asynccontextmanager
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
 
+from radar.alerts.dispatcher import AlertDispatcher
+from radar.alerts.email import send_email
+from radar.alerts.service import AlertService
+from radar.alerts.webhook import send_webhook
 from radar.api.routes.alerts import router as alerts_router
 from radar.api.routes.config import router as config_router
 from radar.api.routes.health import router as health_router
 from radar.api.routes.jobs import router as jobs_router
+from radar.core.config import Settings, load_settings
+from radar.core.db import create_engine_and_session_factory, init_db
+from radar.core.repositories import RadarRepository
+from radar.core.scheduler import RadarScheduler
+from radar.jobs.github_burst import run_github_burst_job
+from radar.jobs.official_pages import run_official_pages_job
+from radar.sources.github.client import GitHubClient
+from radar.sources.official_pages.client import fetch_html
+
+
+@dataclass
+class RuntimeState:
+    settings: Settings
+    config_path: Path
+    engine: Any
+    repo: RadarRepository
+    scheduler: RadarScheduler
+    alert_service: AlertService
+    github_client: GitHubClient
+
+
+def _build_channels(settings: Settings) -> dict[str, Any]:
+    channels: dict[str, Any] = {}
+    if settings.channels.webhook.enabled and settings.channels.webhook.url is not None:
+        channels["webhook"] = str(settings.channels.webhook.url)
+    if settings.channels.email.enabled:
+        channels["email"] = True
+    return channels
+
+
+def _build_email_sender(settings: Settings):
+    if not settings.channels.email.enabled:
+        return None
+
+    email_settings = settings.channels.email
+    from_address = email_settings.from_address or "radar@example.com"
+
+    def _sender(payload: dict) -> None:
+        send_email(
+            payload,
+            smtp_host=email_settings.smtp_host or "localhost",
+            smtp_port=email_settings.smtp_port,
+            username=email_settings.username,
+            password=email_settings.password,
+            from_address=from_address,
+            to=email_settings.to,
+        )
+
+    return _sender
+
+
+def build_runtime(config_path: Path) -> RuntimeState:
+    settings = load_settings(config_path)
+    engine, session_factory = create_engine_and_session_factory(Path(settings.storage.path))
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+    dispatcher = AlertDispatcher(
+        repository=repo,
+        send_webhook=send_webhook if settings.channels.webhook.enabled else None,
+        send_email=_build_email_sender(settings),
+    )
+    alert_service = AlertService(
+        repository=repo,
+        dispatcher=dispatcher,
+        channels=_build_channels(settings),
+    )
+    github_client = GitHubClient(settings.sources.github.token)
+    scheduler = RadarScheduler(timezone=settings.app.timezone)
+
+    if settings.sources.official_pages.enabled:
+
+        def _run_official_pages() -> int:
+            created = 0
+            for page in settings.sources.official_pages.pages:
+                created += run_official_pages_job(
+                    page_config=page,
+                    fetch_html=fetch_html,
+                    repository=repo,
+                    alert_service=alert_service,
+                )
+            return created
+
+        scheduler.register("official_pages", _run_official_pages, minutes=10)
+
+    if settings.sources.github.enabled:
+
+        def _run_github_burst() -> int:
+            search_items: list[dict] = []
+            for query in settings.sources.github.queries:
+                search_items.extend(github_client.search_repositories(query))
+            return run_github_burst_job(
+                search_items=search_items,
+                threshold=settings.sources.github.burst_threshold,
+                repository=repo,
+                alert_service=alert_service,
+            )
+
+        scheduler.register("github_burst", _run_github_burst, minutes=15)
+
+    return RuntimeState(
+        settings=settings,
+        config_path=config_path,
+        engine=engine,
+        repo=repo,
+        scheduler=scheduler,
+        alert_service=alert_service,
+        github_client=github_client,
+    )
+
+
+def apply_runtime(app: FastAPI, runtime: RuntimeState) -> None:
+    old_scheduler = getattr(app.state, "scheduler", None)
+    if old_scheduler is not None:
+        old_scheduler.stop()
+
+    old_engine = getattr(app.state, "engine", None)
+    if old_engine is not None:
+        old_engine.dispose()
+
+    app.state.settings = runtime.settings
+    app.state.config_path = runtime.config_path
+    app.state.engine = runtime.engine
+    app.state.repo = runtime.repo
+    app.state.scheduler = runtime.scheduler
+    app.state.alert_service = runtime.alert_service
+    app.state.github_client = runtime.github_client
+    runtime.scheduler.start()
+
+
+def shutdown_runtime(app: FastAPI) -> None:
+    scheduler = getattr(app.state, "scheduler", None)
+    if scheduler is not None:
+        scheduler.stop()
+    engine = getattr(app.state, "engine", None)
+    if engine is not None:
+        engine.dispose()
 
 
 def create_app(lifespan: Any = None) -> FastAPI:
@@ -16,8 +159,11 @@ def create_app(lifespan: Any = None) -> FastAPI:
     app.include_router(jobs_router)
     app.include_router(config_router)
     # Initialise default state so routes never hit AttributeError
+    app.state.engine = None
     app.state.repo = None
     app.state.scheduler = None
     app.state.settings = None
     app.state.config_path = None
+    app.state.alert_service = None
+    app.state.github_client = None
     return app
