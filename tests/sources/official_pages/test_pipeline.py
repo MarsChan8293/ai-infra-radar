@@ -288,17 +288,17 @@ def test_canonical_name_equals_url(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_normalized_payload_includes_content_hash() -> None:
-    """build_observation must embed content_hash inside normalized_payload."""
-    from radar.sources.official_pages.pipeline import build_observation
+    """build_official_page_observation must embed content_hash inside normalized_payload."""
+    from radar.sources.official_pages.pipeline import build_official_page_observation
 
     html = FIXTURE_HTML.read_text()
     url = "https://api-docs.deepseek.com/"
 
-    obs = build_observation(
+    obs = build_official_page_observation(
         html=html,
         url=url,
         canonical_name=url,
-        keywords=["release"],
+        whitelist_keywords=["release"],
     )
 
     assert "content_hash" in obs["normalized_payload"], (

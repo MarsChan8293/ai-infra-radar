@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Callable
 
 from radar.core.config import OfficialPageEntry
-from radar.sources.official_pages.pipeline import build_observation
+from radar.sources.official_pages.pipeline import build_official_page_observation
 
 
 def run_official_pages_job(
@@ -21,11 +21,11 @@ def run_official_pages_job(
     url = str(page_config.url)
     html = fetch_html(url)
 
-    observation = build_observation(
+    observation = build_official_page_observation(
         html=html,
         url=url,
         canonical_name=url,
-        keywords=page_config.whitelist_keywords,
+        whitelist_keywords=page_config.whitelist_keywords,
     )
 
     return alert_service.process_official_page(page_config, observation)
