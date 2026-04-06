@@ -227,6 +227,30 @@ def test_run_official_pages_job_returns_int(tmp_path: Path) -> None:
     assert result == 1
 
 
+def test_run_official_pages_job_skips_when_no_keywords_match(tmp_path: Path) -> None:
+    """run_official_pages_job must return 0 and skip alert creation when score is 0."""
+    from radar.core.config import OfficialPageEntry
+    from radar.core.db import create_engine_and_session_factory, init_db
+    from radar.core.repositories import RadarRepository
+    from radar.jobs.official_pages import run_official_pages_job
+
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+    alert_service = _FakeAlertService()
+
+    html = "<html><body>general documentation update</body></html>"
+    page_config = OfficialPageEntry(
+        url="https://example.com/docs",  # type: ignore[arg-type]
+        whitelist_keywords=["release"],
+    )
+
+    result = run_official_pages_job(page_config, lambda _: html, repo, alert_service)
+
+    assert result == 0
+    assert alert_service.calls == []
+
+
 # ---------------------------------------------------------------------------
 # Test 7: display_name matches extracted page title
 # ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ def _alert_to_dict(alert) -> dict:
         "score": alert.score,
         "dedupe_key": alert.dedupe_key,
         "reason": alert.reason,
+        "created_at": alert.created_at.isoformat(),
         "status": alert.status,
     }
 

@@ -92,6 +92,11 @@ class AlertService:
             dedupe_key=observation["content_hash"],
             content_hash=observation["content_hash"],
         )
+        reason = {
+            "full_name": full_name,
+            "stars": normalized_payload.get("stars", 0),
+            "forks": normalized_payload.get("forks", 0),
+        }
 
         return self.emit_alert(
             alert_type="github_burst",
@@ -99,15 +104,12 @@ class AlertService:
             source="github",
             score=observation["score"],
             dedupe_key=observation["content_hash"],
-            reason={
-                "full_name": full_name,
-                "stars": normalized_payload.get("stars", 0),
-                "forks": normalized_payload.get("forks", 0),
-            },
+            reason=reason,
             alert_payload={
                 "full_name": full_name,
                 "url": url,
                 "score": observation["score"],
+                "reason": reason,
             },
         )
 

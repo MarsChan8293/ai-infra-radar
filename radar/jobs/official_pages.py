@@ -28,4 +28,7 @@ def run_official_pages_job(
         whitelist_keywords=page_config.whitelist_keywords,
     )
 
+    if observation["score"] == 0.0:
+        return 0
+
     return alert_service.process_official_page(page_config, observation)
