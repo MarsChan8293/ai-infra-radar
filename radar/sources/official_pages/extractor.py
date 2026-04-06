@@ -16,8 +16,8 @@ def extract_release_signal(
 
     Returns:
         title: text from <h1> if present, else <title>, else *url*
-        content_hash: SHA-256 hex digest of the raw HTML
-        matched_keywords: subset of *keywords* found (case-insensitive) in the HTML
+        content_hash: SHA-256 hex digest of the normalised visible text
+        matched_keywords: subset of *keywords* found in the normalised visible text
     """
     soup = BeautifulSoup(html, "html.parser")
 
@@ -28,10 +28,12 @@ def extract_release_signal(
         title_tag = soup.find("title")
         title = (title_tag.get_text(strip=True) if title_tag else "") or url
 
-    html_lower = html.lower()
-    matched_keywords = [kw for kw in keywords if kw.lower() in html_lower]
+    # Use normalised visible text for both keyword matching and hashing so
+    # that script/style content and raw HTML markup are excluded.
+    normalized_text = soup.get_text(" ", strip=True).lower()
+    matched_keywords = [kw for kw in keywords if kw.lower() in normalized_text]
 
-    content_hash = hashlib.sha256(html.encode()).hexdigest()
+    content_hash = hashlib.sha256(normalized_text.encode()).hexdigest()
 
     return {
         "title": title,
