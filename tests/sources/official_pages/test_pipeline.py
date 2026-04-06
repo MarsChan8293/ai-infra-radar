@@ -9,10 +9,15 @@ TDD order:
   6. test_run_official_pages_job_returns_int – job returns int (alert count)
   7. test_display_name_matches_extracted_title – display_name == extracted page title
   8. test_canonical_name_equals_url – canonical_name == raw URL string (not slug)
+  9. test_normalized_payload_includes_content_hash – normalized_payload carries content_hash
+ 10. test_e2e_first_seen_flow_all_steps – upsert, observation recording, alert, dispatch verified
 """
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
+
+from bs4 import BeautifulSoup
 
 
 FIXTURE_HTML = (
@@ -21,6 +26,12 @@ FIXTURE_HTML = (
     / "official_pages"
     / "deepseek-release.html"
 )
+
+
+def _expected_hash(html: str) -> str:
+    """Compute the content_hash that the extractor would produce for *html*."""
+    normalized = BeautifulSoup(html, "html.parser").get_text(" ", strip=True).lower()
+    return hashlib.sha256(normalized.encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -62,23 +73,62 @@ def test_extract_title_falls_back_to_url_when_title_empty() -> None:
 # ---------------------------------------------------------------------------
 
 class _FakeAlertService:
-    """Minimal stand-in for AlertService that counts process_official_page calls.
+    """Stand-in for AlertService that records each conceptual step of the first-seen flow.
 
-    process_official_page returns an int directly (not a dict), matching the
-    contract required by run_official_pages_job.
+    Internally simulates:
+      1. entity_upsert   – keyed by canonical_name / display_name / url
+      2. record_observation – keyed by content_hash / matched_keywords / score
+      3. create_alert    – only when matched_keywords is non-empty
+      4. dispatch        – one event per alert created
+
+    process_official_page returns an int equal to the number of alerts created,
+    matching the contract required by run_official_pages_job.
     """
 
     def __init__(self) -> None:
+        # Raw call log kept for backward-compatible assertions.
         self.calls: list[dict] = []
+
+        # Granular step logs for first-seen flow verification.
+        self.upsert_calls: list[dict] = []
+        self.observation_calls: list[dict] = []
+        self.alert_calls: list[dict] = []
+        self.dispatch_events: list[dict] = []
 
     def process_official_page(self, page_config, observation: dict) -> int:
         self.calls.append({"page_config": page_config, "observation": observation})
-        return 1
+
+        # Step 1: entity upsert.
+        self.upsert_calls.append({
+            "canonical_name": observation["canonical_name"],
+            "display_name": observation["display_name"],
+            "url": observation["url"],
+        })
+
+        # Step 2: record observation.
+        self.observation_calls.append({
+            "content_hash": observation["content_hash"],
+            "matched_keywords": observation["matched_keywords"],
+            "score": observation["score"],
+        })
+
+        # Steps 3 & 4: create alert + dispatch only when keywords matched.
+        alerts_created = 0
+        if observation["matched_keywords"]:
+            alert = {
+                "entity_canonical_name": observation["canonical_name"],
+                "title": observation["display_name"],
+                "content_hash": observation["content_hash"],
+            }
+            self.alert_calls.append(alert)
+            self.dispatch_events.append({"event": "alert_created", "alert": alert})
+            alerts_created = 1
+
+        return alerts_created
 
 
 def test_run_official_pages_job_creates_alert(tmp_path: Path) -> None:
-    """run_official_pages_job(page_config, fetch_html, repository, alert_service) must
-    call alert_service.process_official_page and return created == 1."""
+    """run_official_pages_job must call alert_service.process_official_page and return 1."""
     from radar.core.db import create_engine_and_session_factory, init_db
     from radar.core.repositories import RadarRepository
     from radar.core.config import OfficialPageEntry
@@ -231,3 +281,92 @@ def test_canonical_name_equals_url(tmp_path: Path) -> None:
 
     observation = alert_service.calls[0]["observation"]
     assert observation["canonical_name"] == url
+
+
+# ---------------------------------------------------------------------------
+# Test 9: normalized_payload includes content_hash  (TDD – fails until pipeline updated)
+# ---------------------------------------------------------------------------
+
+def test_normalized_payload_includes_content_hash() -> None:
+    """build_observation must embed content_hash inside normalized_payload."""
+    from radar.sources.official_pages.pipeline import build_observation
+
+    html = FIXTURE_HTML.read_text()
+    url = "https://api-docs.deepseek.com/"
+
+    obs = build_observation(
+        html=html,
+        url=url,
+        canonical_name=url,
+        keywords=["release"],
+    )
+
+    assert "content_hash" in obs["normalized_payload"], (
+        "normalized_payload must include content_hash to keep it close to the extracted signal"
+    )
+    assert obs["normalized_payload"]["content_hash"] == obs["content_hash"]
+
+
+# ---------------------------------------------------------------------------
+# Test 10: first-seen flow – upsert, observation recording, alert, dispatch
+#          (TDD – fails until _FakeAlertService is wired and job is corrected)
+# ---------------------------------------------------------------------------
+
+def test_e2e_first_seen_flow_all_steps(tmp_path: Path) -> None:
+    """The end-to-end first-seen flow must exercise all four conceptual steps:
+    entity upsert, observation recording, alert creation, and dispatch.
+
+    Each step is verified against concrete expected field values so the test
+    proves intent, not just call count.
+    """
+    from radar.core.db import create_engine_and_session_factory, init_db
+    from radar.core.repositories import RadarRepository
+    from radar.core.config import OfficialPageEntry
+    from radar.jobs.official_pages import run_official_pages_job
+
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+    fake = _FakeAlertService()
+    html = FIXTURE_HTML.read_text()
+    url = "https://api-docs.deepseek.com/"
+
+    page_config = OfficialPageEntry(
+        url=url,  # type: ignore[arg-type]
+        whitelist_keywords=["release"],
+    )
+    result = run_official_pages_job(page_config, lambda _: html, repo, fake)
+
+    # ---- Step 1: entity upsert ----
+    assert len(fake.upsert_calls) == 1
+    upsert = fake.upsert_calls[0]
+    assert upsert["canonical_name"] == url, "canonical_name must be the raw URL"
+    assert upsert["display_name"] == "DeepSeek V3 Released", (
+        "display_name must be the extracted page title"
+    )
+    assert upsert["url"] == url
+
+    # ---- Step 2: observation recording ----
+    assert len(fake.observation_calls) == 1
+    obs_rec = fake.observation_calls[0]
+    assert obs_rec["content_hash"] == _expected_hash(html), (
+        "content_hash must match SHA-256 of normalized visible text"
+    )
+    assert "release" in obs_rec["matched_keywords"]
+    assert obs_rec["score"] == 1.0
+
+    # ---- Step 3: alert creation ----
+    assert len(fake.alert_calls) == 1
+    alert = fake.alert_calls[0]
+    assert alert["entity_canonical_name"] == url
+    assert alert["title"] == "DeepSeek V3 Released"
+    assert alert["content_hash"] == _expected_hash(html)
+
+    # ---- Step 4: dispatch ----
+    assert len(fake.dispatch_events) == 1
+    event = fake.dispatch_events[0]
+    assert event["event"] == "alert_created"
+    assert event["alert"] is alert
+
+    # ---- Overall return value ----
+    assert result == 1

@@ -16,7 +16,7 @@ def run_official_pages_job(
     """Poll *page_config*, build an observation, and delegate to *alert_service*.
 
     Returns the int result from alert_service.process_official_page directly.
-    canonical_name is the raw URL; display_name is the extracted page title.
+    canonical_name is the raw URL; display_name is derived from the extracted page title.
     """
     url = str(page_config.url)
     html = fetch_html(url)
@@ -25,10 +25,7 @@ def run_official_pages_job(
         html=html,
         url=url,
         canonical_name=url,
-        display_name=url,  # placeholder; overridden below
         keywords=page_config.whitelist_keywords,
     )
-
-    observation["display_name"] = observation["title"]
 
     return alert_service.process_official_page(page_config, observation)
