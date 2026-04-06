@@ -111,6 +111,14 @@ class RadarRepository:
             session.refresh(log)
             return log
 
+    def get_delivery_logs(self, *, alert_id: int) -> list[DeliveryLog]:
+        with self._session_factory() as session:
+            return list(
+                session.scalars(
+                    select(DeliveryLog).where(DeliveryLog.alert_id == alert_id)
+                )
+            )
+
     def record_job_run(self, *, job_name: str, status: str) -> JobRun:
         with self._session_factory() as session:
             job_run = JobRun(job_name=job_name, status=status)
