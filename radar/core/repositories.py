@@ -65,6 +65,7 @@ class RadarRepository:
 
     def create_alert(
         self,
+        *,
         alert_type: str,
         entity_id: int,
         source: str,

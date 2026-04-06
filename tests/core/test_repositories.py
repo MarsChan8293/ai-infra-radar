@@ -243,6 +243,52 @@ def test_record_observation_rejects_unknown_kwargs(tmp_path: Path) -> None:
         )
 
 
+# --- TDD: create_alert keyword-only signature ---
+
+def test_create_alert_rejects_positional_args(tmp_path: Path) -> None:
+    """create_alert must enforce keyword-only arguments (no positional calls)."""
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repo",
+        canonical_name="kwonly_pos_test",
+        display_name="KW Pos Test",
+        url="https://github.com/test/kwonly",
+    )
+    with pytest.raises(TypeError):
+        repo.create_alert(  # type: ignore[misc]
+            "official_release", entity.id, "github", 0.9, "kwonly:pos:key", {}
+        )
+
+
+def test_create_alert_rejects_unknown_kwargs(tmp_path: Path) -> None:
+    """create_alert must not silently accept arbitrary keyword arguments."""
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repo",
+        canonical_name="kwonly_unk_test",
+        display_name="KW Unk Test",
+        url="https://github.com/test/kwonly2",
+    )
+    with pytest.raises(TypeError):
+        repo.create_alert(  # type: ignore[call-arg]
+            alert_type="official_release",
+            entity_id=entity.id,
+            source="github",
+            score=0.9,
+            dedupe_key="kwonly:unk:key",
+            reason={},
+            unknown_field="oops",
+        )
+
+
 # --- TDD: db parent directory auto-creation ---
 
 def test_engine_creates_parent_dirs(tmp_path: Path) -> None:
