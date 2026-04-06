@@ -8,24 +8,56 @@ class RadarRepository:
     def __init__(self, session_factory: sessionmaker) -> None:
         self._session_factory = session_factory
 
-    def upsert_entity(self, **kwargs) -> Entity:
+    def upsert_entity(
+        self,
+        *,
+        source: str,
+        entity_type: str,
+        canonical_name: str,
+        display_name: str,
+        url: str,
+    ) -> Entity:
         with self._session_factory() as session:
             entity = session.scalar(
-                select(Entity).where(Entity.canonical_name == kwargs["canonical_name"])
+                select(Entity).where(Entity.canonical_name == canonical_name)
             )
             if entity is None:
-                entity = Entity(**kwargs)
+                entity = Entity(
+                    source=source,
+                    entity_type=entity_type,
+                    canonical_name=canonical_name,
+                    display_name=display_name,
+                    url=url,
+                )
                 session.add(entity)
             else:
-                for key, value in kwargs.items():
-                    setattr(entity, key, value)
+                entity.source = source
+                entity.entity_type = entity_type
+                entity.display_name = display_name
+                entity.url = url
             session.commit()
             session.refresh(entity)
             return entity
 
-    def record_observation(self, **kwargs) -> Observation:
+    def record_observation(
+        self,
+        *,
+        entity_id: int,
+        source: str,
+        raw_payload: dict,
+        normalized_payload: dict,
+        dedupe_key: str,
+        content_hash: str,
+    ) -> Observation:
         with self._session_factory() as session:
-            observation = Observation(**kwargs)
+            observation = Observation(
+                entity_id=entity_id,
+                source=source,
+                raw_payload=raw_payload,
+                normalized_payload=normalized_payload,
+                dedupe_key=dedupe_key,
+                content_hash=content_hash,
+            )
             session.add(observation)
             session.commit()
             session.refresh(observation)

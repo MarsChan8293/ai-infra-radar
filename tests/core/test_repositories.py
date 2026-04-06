@@ -1,4 +1,8 @@
+import pytest
 from pathlib import Path
+from datetime import timezone
+
+from sqlalchemy.exc import IntegrityError
 
 from radar.core.db import create_engine_and_session_factory, init_db
 from radar.core.repositories import RadarRepository
@@ -89,3 +93,151 @@ def test_record_delivery_log(tmp_path: Path) -> None:
     assert log.alert_id == alert.id
     assert log.channel == "webhook"
     assert log.status == "sent"
+
+
+# --- TDD: timezone-aware timestamps ---
+
+def test_observation_observed_at_is_timezone_aware(tmp_path: Path) -> None:
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repo",
+        canonical_name="tz_test_entity",
+        display_name="TZ Test",
+        url="https://github.com/test/tz",
+    )
+    observation = repo.record_observation(
+        entity_id=entity.id,
+        source="github",
+        raw_payload={"data": "x"},
+        normalized_payload={"data": "x"},
+        dedupe_key="tz:test:obs",
+        content_hash="deadbeef",
+    )
+
+    assert observation.observed_at.tzinfo is not None
+    assert observation.observed_at.tzinfo == timezone.utc
+
+
+def test_job_run_started_at_is_timezone_aware(tmp_path: Path) -> None:
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    job_run = repo.record_job_run(job_name="tz-test-job", status="success")
+
+    assert job_run.started_at.tzinfo is not None
+    assert job_run.started_at.tzinfo == timezone.utc
+
+
+# --- TDD: Alert composite unique (source, dedupe_key) ---
+
+def test_alert_same_dedupe_key_different_source_is_allowed(tmp_path: Path) -> None:
+    """Same dedupe_key from two distinct sources must not raise IntegrityError."""
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repo",
+        canonical_name="composite_test_entity",
+        display_name="Composite Test",
+        url="https://github.com/test/composite",
+    )
+    repo.create_alert(
+        alert_type="burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.9,
+        dedupe_key="shared:key",
+        reason={},
+    )
+    # Same dedupe_key but different source — must succeed
+    repo.create_alert(
+        alert_type="burst",
+        entity_id=entity.id,
+        source="twitter",
+        score=0.85,
+        dedupe_key="shared:key",
+        reason={},
+    )
+
+
+def test_alert_duplicate_source_and_dedupe_key_raises(tmp_path: Path) -> None:
+    """Same (source, dedupe_key) pair must raise IntegrityError."""
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repo",
+        canonical_name="dup_test_entity",
+        display_name="Dup Test",
+        url="https://github.com/test/dup",
+    )
+    repo.create_alert(
+        alert_type="burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.9,
+        dedupe_key="dup:key",
+        reason={},
+    )
+    with pytest.raises(IntegrityError):
+        repo.create_alert(
+            alert_type="burst",
+            entity_id=entity.id,
+            source="github",
+            score=0.9,
+            dedupe_key="dup:key",
+            reason={},
+        )
+
+
+# --- TDD: explicit typed parameters (no **kwargs) ---
+
+def test_upsert_entity_rejects_unknown_kwargs(tmp_path: Path) -> None:
+    """upsert_entity must not silently accept arbitrary keyword arguments."""
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    with pytest.raises(TypeError):
+        repo.upsert_entity(  # type: ignore[call-arg]
+            source="github",
+            entity_type="repo",
+            canonical_name="strict_test",
+            display_name="Strict",
+            url="https://github.com/test",
+            unknown_field="oops",
+        )
+
+
+def test_record_observation_rejects_unknown_kwargs(tmp_path: Path) -> None:
+    """record_observation must not silently accept arbitrary keyword arguments."""
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repo",
+        canonical_name="strict_obs_entity",
+        display_name="Strict Obs",
+        url="https://github.com/test/strict",
+    )
+    with pytest.raises(TypeError):
+        repo.record_observation(  # type: ignore[call-arg]
+            entity_id=entity.id,
+            source="github",
+            raw_payload={"x": 1},
+            normalized_payload={"x": 1},
+            dedupe_key="strict:obs",
+            content_hash="abc",
+            unknown_field="oops",
+        )

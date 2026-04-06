@@ -1,7 +1,28 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, JSON, String
+from sqlalchemy import DateTime, Float, ForeignKey, JSON, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class UTCDateTime(TypeDecorator):
+    """DateTime column that always returns timezone-aware UTC datetimes.
+
+    SQLite stores datetimes as naive strings; this decorator reattaches the
+    UTC timezone when reading back so callers always receive aware objects.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
 
 class Base(DeclarativeBase):
@@ -27,7 +48,7 @@ class Observation(Base):
     normalized_payload: Mapped[dict] = mapped_column(JSON)
     dedupe_key: Mapped[str] = mapped_column(String(255))
     content_hash: Mapped[str] = mapped_column(String(255))
-    observed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    observed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=_utcnow)
 
 
 class Alert(Base):
@@ -37,9 +58,11 @@ class Alert(Base):
     entity_id: Mapped[int] = mapped_column(ForeignKey("entities.id"))
     source: Mapped[str] = mapped_column(String(64))
     score: Mapped[float] = mapped_column(Float)
-    dedupe_key: Mapped[str] = mapped_column(String(255), unique=True)
+    dedupe_key: Mapped[str] = mapped_column(String(255))
     reason: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(32), default="created")
+
+    __table_args__ = (UniqueConstraint("source", "dedupe_key", name="uq_alert_source_dedupe_key"),)
 
 
 class DeliveryLog(Base):
@@ -56,5 +79,5 @@ class JobRun(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     job_name: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(32))
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=_utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
