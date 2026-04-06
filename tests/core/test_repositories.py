@@ -241,3 +241,64 @@ def test_record_observation_rejects_unknown_kwargs(tmp_path: Path) -> None:
             content_hash="abc",
             unknown_field="oops",
         )
+
+
+# --- TDD: db parent directory auto-creation ---
+
+def test_engine_creates_parent_dirs(tmp_path: Path) -> None:
+    """create_engine_and_session_factory must create missing parent directories."""
+    nested_path = tmp_path / "a" / "b" / "c" / "radar.db"
+    assert not nested_path.parent.exists()
+    engine, _ = create_engine_and_session_factory(nested_path)
+    init_db(engine)
+    assert nested_path.parent.exists()
+
+
+# --- TDD: SQLite foreign key enforcement ---
+
+def test_foreign_key_violation_raises(tmp_path: Path) -> None:
+    """Inserting an Observation with a non-existent entity_id must raise IntegrityError."""
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "fk.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    with pytest.raises(IntegrityError):
+        repo.record_observation(
+            entity_id=9999,  # no such entity
+            source="github",
+            raw_payload={"x": 1},
+            normalized_payload={"x": 1},
+            dedupe_key="fk:test",
+            content_hash="abc",
+        )
+
+
+# --- TDD: finished_at is UTC-aware ---
+
+def test_job_run_finished_at_is_timezone_aware(tmp_path: Path) -> None:
+    """finished_at read back from DB must be timezone-aware UTC."""
+    from datetime import datetime, timezone
+
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "fin.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    job_run = repo.record_job_run(job_name="fin-test-job", status="success")
+
+    from sqlalchemy.orm import Session
+    from radar.core.models import JobRun
+
+    with session_factory() as session:
+        session.get(JobRun, job_run.id)
+        session.execute(
+            __import__("sqlalchemy").update(JobRun)
+            .where(JobRun.id == job_run.id)
+            .values(finished_at=datetime.now(timezone.utc))
+        )
+        session.commit()
+        refreshed = session.get(JobRun, job_run.id)
+
+    assert refreshed is not None
+    assert refreshed.finished_at is not None
+    assert refreshed.finished_at.tzinfo is not None
+    assert refreshed.finished_at.tzinfo == timezone.utc

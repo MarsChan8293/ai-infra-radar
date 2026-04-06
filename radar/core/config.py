@@ -1,23 +1,30 @@
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+
+
+_FORBID = ConfigDict(extra="forbid")
 
 
 class AppSettings(BaseModel):
+    model_config = _FORBID
     timezone: str
 
 
 class StorageSettings(BaseModel):
+    model_config = _FORBID
     path: str
 
 
 class WebhookChannelSettings(BaseModel):
+    model_config = _FORBID
     enabled: bool
     url: HttpUrl | None = None
 
 
 class EmailChannelSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
     enabled: bool
     smtp_host: str | None = None
     smtp_port: int = 587
@@ -26,15 +33,15 @@ class EmailChannelSettings(BaseModel):
     from_address: str | None = Field(default=None, alias="from")
     to: list[str] = []
 
-    model_config = {"populate_by_name": True}
-
 
 class ChannelSettings(BaseModel):
+    model_config = _FORBID
     webhook: WebhookChannelSettings
     email: EmailChannelSettings
 
 
 class GitHubSettings(BaseModel):
+    model_config = _FORBID
     enabled: bool
     token: str | None = None
     queries: list[str] = []
@@ -42,21 +49,25 @@ class GitHubSettings(BaseModel):
 
 
 class OfficialPageEntry(BaseModel):
+    model_config = _FORBID
     url: HttpUrl
     whitelist_keywords: list[str] = []
 
 
 class OfficialPagesSettings(BaseModel):
+    model_config = _FORBID
     enabled: bool
     pages: list[OfficialPageEntry] = []
 
 
 class SourceSettings(BaseModel):
+    model_config = _FORBID
     github: GitHubSettings
     official_pages: OfficialPagesSettings
 
 
 class Settings(BaseModel):
+    model_config = _FORBID
     app: AppSettings
     storage: StorageSettings
     channels: ChannelSettings

@@ -80,4 +80,4 @@ class JobRun(Base):
     job_name: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(32))
     started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=_utcnow)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

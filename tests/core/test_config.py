@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from radar.cli import cli
@@ -77,3 +79,57 @@ def test_validate_config_cli_command() -> None:
 
     assert result.exit_code == 0
     assert "config ok" in result.output
+
+
+# --- TDD: unknown keys must be rejected ---
+
+def test_unknown_top_level_key_raises(tmp_path: Path) -> None:
+    """An unrecognised top-level key must raise ValidationError."""
+    config_path = tmp_path / "bad.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+unknown_top_key: oops
+""".strip()
+    )
+    with pytest.raises(ValidationError):
+        load_settings(config_path)
+
+
+def test_unknown_nested_key_raises(tmp_path: Path) -> None:
+    """An unrecognised key nested inside a sub-model must raise ValidationError."""
+    config_path = tmp_path / "bad_nested.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+  typo_key: should_not_be_here
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+""".strip()
+    )
+    with pytest.raises(ValidationError):
+        load_settings(config_path)
