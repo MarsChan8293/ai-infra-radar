@@ -4,6 +4,9 @@ from sqlalchemy.orm import sessionmaker
 from radar.core.models import Alert, DeliveryLog, Entity, JobRun, Observation
 
 
+
+
+
 class RadarRepository:
     def __init__(self, session_factory: sessionmaker) -> None:
         self._session_factory = session_factory
@@ -126,3 +129,15 @@ class RadarRepository:
             session.commit()
             session.refresh(job_run)
             return job_run
+
+    def list_alerts(self, *, limit: int = 100, offset: int = 0) -> list[Alert]:
+        with self._session_factory() as session:
+            return list(
+                session.scalars(
+                    select(Alert).order_by(Alert.id.desc()).limit(limit).offset(offset)
+                )
+            )
+
+    def get_alert(self, alert_id: int) -> Alert | None:
+        with self._session_factory() as session:
+            return session.scalar(select(Alert).where(Alert.id == alert_id))
