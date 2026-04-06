@@ -1,30 +1,18 @@
 """Tests for alert dispatcher and alert service (Task 5)."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from radar.alerts.dispatcher import AlertDispatcher
 from radar.alerts.service import AlertService
-from radar.core.db import create_engine_and_session_factory, init_db
 from radar.core.repositories import RadarRepository
-
-
-def _make_repo(tmp_path: Path) -> RadarRepository:
-    engine, sf = create_engine_and_session_factory(tmp_path / "radar.db")
-    init_db(engine)
-    return RadarRepository(sf)
-
 
 # ---------------------------------------------------------------------------
 # Dispatcher: delivery log recording
 # ---------------------------------------------------------------------------
 
 
-def test_dispatcher_records_delivery_logs_for_all_channels(tmp_path: Path) -> None:
-    repo = _make_repo(tmp_path)
-
+def test_dispatcher_records_delivery_logs_for_all_channels(repo: RadarRepository) -> None:
     entity = repo.upsert_entity(
         source="official_pages",
         entity_type="page",
@@ -74,9 +62,7 @@ def test_dispatcher_records_delivery_logs_for_all_channels(tmp_path: Path) -> No
     assert all(log.status == "sent" for log in logs)
 
 
-def test_dispatcher_records_failed_status_on_sender_error(tmp_path: Path) -> None:
-    repo = _make_repo(tmp_path)
-
+def test_dispatcher_records_failed_status_on_sender_error(repo: RadarRepository) -> None:
     entity = repo.upsert_entity(
         source="official_pages",
         entity_type="page",
@@ -113,14 +99,48 @@ def test_dispatcher_records_failed_status_on_sender_error(tmp_path: Path) -> Non
     assert logs[0].status == "failed"
 
 
+def test_dispatcher_records_skipped_status_when_sender_is_missing(repo: RadarRepository) -> None:
+    entity = repo.upsert_entity(
+        source="official_pages",
+        entity_type="page",
+        canonical_name="skip_test_entity",
+        display_name="Skip Test",
+        url="https://example.com/skip",
+    )
+    alert = repo.create_alert(
+        alert_type="official_release",
+        entity_id=entity.id,
+        source="official_pages",
+        score=0.7,
+        dedupe_key="test:dispatch:skip",
+        reason={},
+    )
+
+    dispatcher = AlertDispatcher(
+        repository=repo,
+        send_webhook=lambda url, payload: None,
+        send_email=None,
+    )
+
+    dispatcher.dispatch(
+        alert_id=alert.id,
+        alert_payload={"score": 0.7},
+        channels={"webhook": "https://hooks.example.com/notify", "email": True},
+    )
+
+    logs = {log.channel: log.status for log in repo.get_delivery_logs(alert_id=alert.id)}
+    assert logs == {"webhook": "sent", "email": "skipped"}
+
+
 # ---------------------------------------------------------------------------
 # AlertService: emit_alert dedupe/suppression
 # ---------------------------------------------------------------------------
 
 
-def test_emit_alert_creates_alert_and_returns_1_on_new(tmp_path: Path) -> None:
-    repo = _make_repo(tmp_path)
-
+def test_emit_alert_creates_alert_and_returns_1_on_new(
+    repo: RadarRepository,
+    alert_service: AlertService,
+) -> None:
     entity = repo.upsert_entity(
         source="official_pages",
         entity_type="page",
@@ -129,18 +149,7 @@ def test_emit_alert_creates_alert_and_returns_1_on_new(tmp_path: Path) -> None:
         url="https://example.com/emit",
     )
 
-    dispatcher = AlertDispatcher(
-        repository=repo,
-        send_webhook=lambda url, payload: None,
-        send_email=lambda payload: None,
-    )
-    service = AlertService(
-        repository=repo,
-        dispatcher=dispatcher,
-        channels={"webhook": "https://hooks.example.com/", "email": True},
-    )
-
-    count = service.emit_alert(
+    count = alert_service.emit_alert(
         alert_type="official_release",
         entity_id=entity.id,
         source="official_pages",
@@ -152,9 +161,10 @@ def test_emit_alert_creates_alert_and_returns_1_on_new(tmp_path: Path) -> None:
     assert count == 1
 
 
-def test_emit_alert_suppresses_duplicate_and_returns_0(tmp_path: Path) -> None:
-    repo = _make_repo(tmp_path)
-
+def test_emit_alert_suppresses_duplicate_and_returns_0(
+    repo: RadarRepository,
+    alert_service: AlertService,
+) -> None:
     entity = repo.upsert_entity(
         source="official_pages",
         entity_type="page",
@@ -163,18 +173,7 @@ def test_emit_alert_suppresses_duplicate_and_returns_0(tmp_path: Path) -> None:
         url="https://example.com/dup",
     )
 
-    dispatcher = AlertDispatcher(
-        repository=repo,
-        send_webhook=lambda url, payload: None,
-        send_email=lambda payload: None,
-    )
-    service = AlertService(
-        repository=repo,
-        dispatcher=dispatcher,
-        channels={"webhook": "https://hooks.example.com/"},
-    )
-
-    count_first = service.emit_alert(
+    count_first = alert_service.emit_alert(
         alert_type="official_release",
         entity_id=entity.id,
         source="official_pages",
@@ -183,7 +182,7 @@ def test_emit_alert_suppresses_duplicate_and_returns_0(tmp_path: Path) -> None:
         reason={"title": "Release 2.0"},
         alert_payload={"title": "Release 2.0"},
     )
-    count_second = service.emit_alert(
+    count_second = alert_service.emit_alert(
         alert_type="official_release",
         entity_id=entity.id,
         source="official_pages",
@@ -202,11 +201,8 @@ def test_emit_alert_suppresses_duplicate_and_returns_0(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_process_official_page_upserts_entity_and_emits_alert(tmp_path: Path) -> None:
+def test_process_official_page_upserts_entity_and_emits_alert(repo: RadarRepository) -> None:
     from radar.core.config import OfficialPageEntry
-    from pydantic import HttpUrl
-
-    repo = _make_repo(tmp_path)
 
     dispatched_alerts: list[int] = []
 

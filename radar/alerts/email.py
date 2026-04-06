@@ -32,7 +32,7 @@ def send_email(
     msg.set_content("\n".join(body_lines))
 
     with smtplib.SMTP(smtp_host, smtp_port) as smtp:
+        smtp.starttls()
         if username and password:
-            smtp.starttls()
             smtp.login(username, password)
         smtp.send_message(msg)

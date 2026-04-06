@@ -51,12 +51,18 @@ class AlertDispatcher:
         for channel, config in channels.items():
             status = "sent"
             try:
-                if channel == "webhook" and self._send_webhook is not None:
-                    url = str(config)
-                    self._send_webhook(url, alert_payload)
-                elif channel == "email" and self._send_email is not None:
-                    self._send_email(alert_payload)
-                elif channel not in ("webhook", "email"):
+                if channel == "webhook":
+                    if self._send_webhook is None:
+                        status = "skipped"
+                    else:
+                        url = str(config)
+                        self._send_webhook(url, alert_payload)
+                elif channel == "email":
+                    if self._send_email is None:
+                        status = "skipped"
+                    else:
+                        self._send_email(alert_payload)
+                else:
                     raise ValueError(f"Unknown channel: {channel!r}")
             except Exception:
                 status = "failed"
