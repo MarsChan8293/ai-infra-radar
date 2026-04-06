@@ -62,6 +62,55 @@ class AlertService:
         )
         return 1
 
+    def process_github_burst(
+        self,
+        item: dict,
+        observation: dict,
+    ) -> int:
+        """Persist a GitHub burst observation and emit a github_burst alert.
+
+        Mirrors the official-pages flow: upsert entity → record observation →
+        emit alert (with deduplication).
+
+        Returns 1 if a new alert was created and dispatched, 0 if suppressed.
+        """
+        full_name: str = item["full_name"]
+        url = observation["url"]
+
+        entity = self._repo.upsert_entity(
+            source="github",
+            entity_type="repository",
+            canonical_name=observation["canonical_name"],
+            display_name=observation["display_name"],
+            url=url,
+        )
+        self._repo.record_observation(
+            entity_id=entity.id,
+            source="github",
+            raw_payload=observation["raw_payload"],
+            normalized_payload=observation["normalized_payload"],
+            dedupe_key=observation["content_hash"],
+            content_hash=observation["content_hash"],
+        )
+
+        return self.emit_alert(
+            alert_type="github_burst",
+            entity_id=entity.id,
+            source="github",
+            score=observation["score"],
+            dedupe_key=observation["content_hash"],
+            reason={
+                "full_name": full_name,
+                "stars": item.get("stargazers_count", 0),
+                "forks": item.get("forks_count", 0),
+            },
+            alert_payload={
+                "full_name": full_name,
+                "url": url,
+                "score": observation["score"],
+            },
+        )
+
     def process_official_page(
         self,
         page_config: Any,
