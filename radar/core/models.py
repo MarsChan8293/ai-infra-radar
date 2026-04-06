@@ -69,6 +69,7 @@ class Alert(Base):
     score: Mapped[float] = mapped_column(Float)
     dedupe_key: Mapped[str] = mapped_column(String(255))
     reason: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=_utcnow)
     status: Mapped[str] = mapped_column(String(32), default="created")
 
     __table_args__ = (UniqueConstraint("source", "dedupe_key", name="uq_alert_source_dedupe_key"),)
@@ -77,7 +78,7 @@ class Alert(Base):
 class DeliveryLog(Base):
     __tablename__ = "delivery_logs"
     id: Mapped[int] = mapped_column(primary_key=True)
-    alert_id: Mapped[int] = mapped_column(ForeignKey("alerts.id"))
+    alert_id: Mapped[int | None] = mapped_column(ForeignKey("alerts.id"), nullable=True)
     channel: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(32))
     idempotency_key: Mapped[str] = mapped_column(String(255))

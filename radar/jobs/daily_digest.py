@@ -1,4 +1,4 @@
-"""Daily digest job: aggregate top alerts and dispatch a single summary payload."""
+"""Daily digest job: aggregate recent top alerts and dispatch one summary payload."""
 from __future__ import annotations
 
 from typing import Any, Callable

@@ -1,6 +1,8 @@
 """TDD tests for the daily digest job."""
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from radar.jobs.daily_digest import run_daily_digest_job
@@ -92,3 +94,21 @@ def test_payload_items_contain_required_fields(repo) -> None:
     assert "score" in item
     assert "source" in item
     assert "alert_type" in item
+
+
+def test_digest_excludes_alerts_older_than_24_hours(repo) -> None:
+    from radar.core.models import Alert
+
+    old_alert = _seed_alert(repo, score=0.95)[0]
+    with repo._session_factory() as session:
+        persisted = session.get(Alert, old_alert.id)
+        assert persisted is not None
+        persisted.created_at = datetime.now(timezone.utc) - timedelta(days=2)
+        session.commit()
+
+    _seed_alert(repo, score=0.75)
+    dispatched = []
+    run_daily_digest_job(repo, dispatch=dispatched.append)
+
+    assert dispatched[0]["count"] == 1
+    assert dispatched[0]["items"][0]["score"] == pytest.approx(0.75)

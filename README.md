@@ -54,7 +54,7 @@ sources:
 ## Run the server
 
 ```bash
-uvicorn radar.main:app --reload
+RADAR_CONFIG=config/radar.yaml uvicorn radar.main:app --reload
 ```
 
 Key endpoints:
@@ -104,10 +104,16 @@ curl -X POST http://localhost:8000/jobs/run/daily_digest
 
 ```bash
 # Validate a config file without starting the server
-python3 -m radar.cli validate-config config.yaml
+python3 -m radar.cli validate-config config/radar.yaml
 
-# Run the server directly
-python3 -m radar.cli serve --config config.yaml
+# Trigger a job from the CLI
+python3 -m radar.cli run-job github_burst --config config/radar.yaml
+
+# Backfill one source
+python3 -m radar.cli backfill-source github --config config/radar.yaml
+
+# Send a test webhook
+python3 -m radar.cli send-test-notification webhook --config config/radar.yaml
 ```
 
 ## Run tests
@@ -115,4 +121,3 @@ python3 -m radar.cli serve --config config.yaml
 ```bash
 python3 -m pytest
 ```
-

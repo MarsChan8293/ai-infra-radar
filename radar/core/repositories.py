@@ -1,6 +1,8 @@
 """Repository helpers for Radar persistence and query access."""
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
@@ -101,24 +103,36 @@ class RadarRepository:
                 is not None
             )
 
-    def record_delivery_log(self, *, alert_id: int, channel: str, status: str) -> DeliveryLog:
+    def record_delivery_log(
+        self,
+        *,
+        alert_id: int | None,
+        channel: str,
+        status: str,
+        idempotency_key: str | None = None,
+    ) -> DeliveryLog:
         with self._session_factory() as session:
             log = DeliveryLog(
                 alert_id=alert_id,
                 channel=channel,
                 status=status,
-                idempotency_key=f"{alert_id}:{channel}",
+                idempotency_key=idempotency_key or f"{alert_id or 'raw'}:{channel}",
             )
             session.add(log)
             session.commit()
             session.refresh(log)
             return log
 
-    def get_delivery_logs(self, *, alert_id: int) -> list[DeliveryLog]:
+    def get_delivery_logs(self, *, alert_id: int | None) -> list[DeliveryLog]:
         with self._session_factory() as session:
+            predicate = (
+                DeliveryLog.alert_id.is_(None)
+                if alert_id is None
+                else DeliveryLog.alert_id == alert_id
+            )
             return list(
                 session.scalars(
-                    select(DeliveryLog).where(DeliveryLog.alert_id == alert_id)
+                    select(DeliveryLog).where(predicate)
                 )
             )
 
@@ -142,11 +156,15 @@ class RadarRepository:
         with self._session_factory() as session:
             return session.scalar(select(Alert).where(Alert.id == alert_id))
 
-    def get_digest_candidates(self, *, limit: int = 50) -> list[Alert]:
-        """Return alerts ranked by score descending, up to *limit* rows."""
+    def get_digest_candidates(self, *, limit: int = 50, window_hours: int = 24) -> list[Alert]:
+        """Return recent alerts ranked by score descending, up to *limit* rows."""
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
         with self._session_factory() as session:
             return list(
                 session.scalars(
-                    select(Alert).order_by(Alert.score.desc()).limit(limit)
+                    select(Alert)
+                    .where(Alert.created_at >= cutoff)
+                    .order_by(Alert.score.desc())
+                    .limit(limit)
                 )
             )

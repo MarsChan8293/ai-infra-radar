@@ -132,6 +132,23 @@ def test_dispatcher_records_skipped_status_when_sender_is_missing(repo: RadarRep
     assert logs == {"webhook": "sent", "email": "skipped"}
 
 
+def test_dispatcher_dispatch_raw_records_delivery_logs_without_alert_id(repo: RadarRepository) -> None:
+    dispatcher = AlertDispatcher(
+        repository=repo,
+        send_webhook=lambda url, payload: None,
+        send_email=lambda payload: None,
+    )
+
+    dispatcher.dispatch_raw(
+        alert_payload={"type": "daily_digest", "count": 1},
+        channels={"webhook": "https://hooks.example.com/notify", "email": True},
+        delivery_key_prefix="daily_digest",
+    )
+
+    logs = {log.channel: log.status for log in repo.get_delivery_logs(alert_id=None)}
+    assert logs == {"webhook": "sent", "email": "sent"}
+
+
 # ---------------------------------------------------------------------------
 # AlertService: emit_alert dedupe/suppression
 # ---------------------------------------------------------------------------

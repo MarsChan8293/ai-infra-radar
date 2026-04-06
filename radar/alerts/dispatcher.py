@@ -39,6 +39,36 @@ class AlertDispatcher:
         alert_payload: dict,
         channels: dict[str, Any],
     ) -> None:
+        self._dispatch_channels(
+            alert_id=alert_id,
+            alert_payload=alert_payload,
+            channels=channels,
+            idempotency_prefix=str(alert_id),
+        )
+
+    def dispatch_raw(
+        self,
+        *,
+        alert_payload: dict,
+        channels: dict[str, Any],
+        delivery_key_prefix: str,
+    ) -> None:
+        """Fan a non-alert payload out to every channel and record raw delivery logs."""
+        self._dispatch_channels(
+            alert_id=None,
+            alert_payload=alert_payload,
+            channels=channels,
+            idempotency_prefix=delivery_key_prefix,
+        )
+
+    def _dispatch_channels(
+        self,
+        *,
+        alert_id: int | None,
+        alert_payload: dict,
+        channels: dict[str, Any],
+        idempotency_prefix: str,
+    ) -> None:
         """Fan *alert_payload* out to every channel in *channels*.
 
         ``channels`` is a mapping from channel name to channel-specific
@@ -71,4 +101,5 @@ class AlertDispatcher:
                 alert_id=alert_id,
                 channel=channel,
                 status=status,
+                idempotency_key=f"{idempotency_prefix}:{channel}",
             )

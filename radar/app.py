@@ -114,16 +114,17 @@ def build_runtime(config_path: Path) -> RuntimeState:
 
         scheduler.register("github_burst", _run_github_burst, minutes=15)
 
+    daily_digest_channels = _build_channels(settings)
+
+    def _dispatch_daily_digest(payload: dict) -> None:
+        dispatcher.dispatch_raw(
+            alert_payload=payload,
+            channels=daily_digest_channels,
+            delivery_key_prefix="daily_digest",
+        )
+
     def _run_daily_digest() -> int:
-        channels = _build_channels(settings)
-
-        def _dispatch(payload: dict) -> None:
-            if "webhook" in channels and dispatcher._send_webhook is not None:
-                dispatcher._send_webhook(str(channels["webhook"]), payload)
-            if "email" in channels and dispatcher._send_email is not None:
-                dispatcher._send_email(payload)
-
-        return run_daily_digest_job(repo, dispatch=_dispatch)
+        return run_daily_digest_job(repo, dispatch=_dispatch_daily_digest)
 
     scheduler.register("daily_digest", _run_daily_digest, hours=24)
 
