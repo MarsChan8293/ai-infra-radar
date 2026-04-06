@@ -64,7 +64,6 @@ class AlertService:
 
     def process_github_burst(
         self,
-        item: dict,
         observation: dict,
     ) -> int:
         """Persist a GitHub burst observation and emit a github_burst alert.
@@ -74,7 +73,8 @@ class AlertService:
 
         Returns 1 if a new alert was created and dispatched, 0 if suppressed.
         """
-        full_name: str = item["full_name"]
+        normalized_payload = observation["normalized_payload"]
+        full_name: str = normalized_payload["full_name"]
         url = observation["url"]
 
         entity = self._repo.upsert_entity(
@@ -101,8 +101,8 @@ class AlertService:
             dedupe_key=observation["content_hash"],
             reason={
                 "full_name": full_name,
-                "stars": item.get("stargazers_count", 0),
-                "forks": item.get("forks_count", 0),
+                "stars": normalized_payload.get("stars", 0),
+                "forks": normalized_payload.get("forks", 0),
             },
             alert_payload={
                 "full_name": full_name,

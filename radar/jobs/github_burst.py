@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from radar.sources.github.pipeline import normalize_github_item
-from radar.sources.github.scoring import score_github_item
+from radar.sources.github.pipeline import build_github_observation
 
 
 def run_github_burst_job(
@@ -26,7 +25,7 @@ def run_github_burst_job(
         Passed through to ``alert_service``; may be ``None`` in unit tests
         that use a fake service.
     alert_service:
-        Must expose ``process_github_burst(item, observation) -> int``.
+        Must expose ``process_github_burst(observation) -> int``.
 
     Returns
     -------
@@ -35,9 +34,7 @@ def run_github_burst_job(
     """
     total = 0
     for item in search_items:
-        score = score_github_item(item)
-        if score >= threshold:
-            observation = normalize_github_item(item)
-            observation["score"] = score
-            total += alert_service.process_github_burst(item, observation)
+        observation = build_github_observation(item)
+        if observation["score"] >= threshold:
+            total += alert_service.process_github_burst(observation)
     return total

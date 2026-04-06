@@ -1,7 +1,9 @@
 """Burst-signal scoring for GitHub repository search items.
 
 Scores are deterministic floats in [0.0, 1.0] computed from a weighted
-log-normalised combination of stargazers and forks counts.
+log-normalised combination of stargazers and forks counts. The MVP keeps this
+purely count-based so repeated processing of the same payload always produces
+the same score without needing a time-dependent freshness term.
 """
 from __future__ import annotations
 

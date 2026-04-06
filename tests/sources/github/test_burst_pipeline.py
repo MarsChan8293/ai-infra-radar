@@ -151,8 +151,8 @@ class _FakeAlertService:
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    def process_github_burst(self, item: dict, observation: dict) -> int:
-        self.calls.append({"item": item, "observation": observation})
+    def process_github_burst(self, observation: dict) -> int:
+        self.calls.append(observation)
         return 1
 
 
@@ -174,7 +174,7 @@ def test_run_github_burst_job_creates_alert_for_high_activity() -> None:
 
     assert result == 1, "Only one high-activity item should produce an alert"
     assert len(fake.calls) == 1
-    assert fake.calls[0]["item"]["full_name"] == "example-org/high-activity-repo"
+    assert fake.calls[0]["normalized_payload"]["full_name"] == "example-org/high-activity-repo"
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +221,7 @@ def test_run_github_burst_job_returns_int() -> None:
 @respx.mock
 def test_github_client_fetches_search_items() -> None:
     """fetch_search_results must call the GitHub search API and return the items list."""
-    from radar.sources.github.client import fetch_search_results
+    from radar.sources.github.client import GitHubClient
 
     payload = json.loads(FIXTURE_PATH.read_text())
     respx.route(
@@ -229,7 +229,7 @@ def test_github_client_fetches_search_items() -> None:
         url__startswith="https://api.github.com/search/repositories",
     ).mock(return_value=httpx.Response(200, json=payload))
 
-    items = fetch_search_results(query="ai infrastructure", token=None)
+    items = GitHubClient().search_repositories(query="ai infrastructure")
 
     assert len(items) == 2
     assert items[0]["full_name"] == "example-org/high-activity-repo"
@@ -246,8 +246,7 @@ def test_process_github_burst_creates_entity_and_alert(tmp_path: Path) -> None:
     from radar.alerts.service import AlertService
     from radar.core.db import create_engine_and_session_factory, init_db
     from radar.core.repositories import RadarRepository
-    from radar.sources.github.pipeline import normalize_github_item
-    from radar.sources.github.scoring import score_github_item
+    from radar.sources.github.pipeline import build_github_observation
 
     engine, sf = create_engine_and_session_factory(tmp_path / "radar.db")
     init_db(engine)
@@ -263,11 +262,9 @@ def test_process_github_burst_creates_entity_and_alert(tmp_path: Path) -> None:
         channels={"webhook": "https://hooks.example.com/test"},
     )
 
-    item = _load_items()[0]
-    observation = normalize_github_item(item)
-    observation["score"] = score_github_item(item)
+    observation = build_github_observation(_load_items()[0])
 
-    result = service.process_github_burst(item, observation)
+    result = service.process_github_burst(observation)
 
     assert result == 1
 
@@ -282,8 +279,7 @@ def test_duplicate_burst_alert_is_suppressed(tmp_path: Path) -> None:
     from radar.alerts.service import AlertService
     from radar.core.db import create_engine_and_session_factory, init_db
     from radar.core.repositories import RadarRepository
-    from radar.sources.github.pipeline import normalize_github_item
-    from radar.sources.github.scoring import score_github_item
+    from radar.sources.github.pipeline import build_github_observation
 
     engine, sf = create_engine_and_session_factory(tmp_path / "radar.db")
     init_db(engine)
@@ -299,9 +295,7 @@ def test_duplicate_burst_alert_is_suppressed(tmp_path: Path) -> None:
         channels={},
     )
 
-    item = _load_items()[0]
-    observation = normalize_github_item(item)
-    observation["score"] = score_github_item(item)
+    observation = build_github_observation(_load_items()[0])
 
-    assert service.process_github_burst(item, observation) == 1
-    assert service.process_github_burst(item, observation) == 0
+    assert service.process_github_burst(observation) == 1
+    assert service.process_github_burst(observation) == 0

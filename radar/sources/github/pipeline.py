@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import hashlib
 
+from radar.sources.github.scoring import score_github_item
 
-def normalize_github_item(item: dict) -> dict:
+
+def build_github_observation(item: dict) -> dict:
     """Return a normalised observation dict for a single GitHub search result *item*.
 
     The ``content_hash`` is derived from ``full_name``, ``pushed_at``, and
@@ -34,8 +36,13 @@ def normalize_github_item(item: dict) -> dict:
         "canonical_name": canonical_name,
         "display_name": full_name,
         "url": url,
-        "title": full_name,
         "content_hash": content_hash,
+        "score": score_github_item(item),
         "raw_payload": item,
         "normalized_payload": normalized_payload,
     }
+
+
+def normalize_github_item(item: dict) -> dict:
+    """Backward-compatible alias for the GitHub observation builder."""
+    return build_github_observation(item)
