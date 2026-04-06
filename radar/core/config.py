@@ -41,9 +41,14 @@ class GitHubSettings(BaseModel):
     burst_threshold: float = 0.6
 
 
+class OfficialPageEntry(BaseModel):
+    url: HttpUrl
+    whitelist_keywords: list[str] = []
+
+
 class OfficialPagesSettings(BaseModel):
     enabled: bool
-    pages: list[dict] = []
+    pages: list[OfficialPageEntry] = []
 
 
 class SourceSettings(BaseModel):

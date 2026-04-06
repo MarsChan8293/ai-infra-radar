@@ -46,3 +46,7 @@ sources:
     assert settings.app.timezone == "Asia/Singapore"
     assert settings.storage.path == "./data/radar.db"
     assert settings.channels.webhook.enabled is True
+
+    page = settings.sources.official_pages.pages[0]
+    assert str(page.url) == "https://api-docs.deepseek.com/"
+    assert page.whitelist_keywords == ["release", "update"]
