@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 
 _FORBID = ConfigDict(extra="forbid")
@@ -22,6 +22,12 @@ class WebhookChannelSettings(BaseModel):
     enabled: bool
     url: HttpUrl | None = None
 
+    @model_validator(mode="after")
+    def _require_url_when_enabled(self) -> "WebhookChannelSettings":
+        if self.enabled and self.url is None:
+            raise ValueError("url is required when webhook is enabled")
+        return self
+
 
 class EmailChannelSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
@@ -32,6 +38,12 @@ class EmailChannelSettings(BaseModel):
     password: str | None = None
     from_address: str | None = Field(default=None, alias="from")
     to: list[str] = []
+
+    @model_validator(mode="after")
+    def _require_smtp_host_when_enabled(self) -> "EmailChannelSettings":
+        if self.enabled and self.smtp_host is None:
+            raise ValueError("smtp_host is required when email is enabled")
+        return self
 
 
 class ChannelSettings(BaseModel):
@@ -47,6 +59,12 @@ class GitHubSettings(BaseModel):
     queries: list[str] = []
     burst_threshold: float = 0.6
 
+    @model_validator(mode="after")
+    def _require_queries_when_enabled(self) -> "GitHubSettings":
+        if self.enabled and not self.queries:
+            raise ValueError("queries must contain at least one entry when github is enabled")
+        return self
+
 
 class OfficialPageEntry(BaseModel):
     model_config = _FORBID
@@ -58,6 +76,12 @@ class OfficialPagesSettings(BaseModel):
     model_config = _FORBID
     enabled: bool
     pages: list[OfficialPageEntry] = []
+
+    @model_validator(mode="after")
+    def _require_pages_when_enabled(self) -> "OfficialPagesSettings":
+        if self.enabled and not self.pages:
+            raise ValueError("pages must contain at least one entry when official_pages is enabled")
+        return self
 
 
 class SourceSettings(BaseModel):
