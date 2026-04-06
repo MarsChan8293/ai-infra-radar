@@ -8,6 +8,7 @@ TDD order:
   5. test_content_hash_uses_normalized_text – hash derived from normalized text
   6. test_run_official_pages_job_returns_int – job returns int (alert count)
   7. test_display_name_matches_extracted_title – display_name == extracted page title
+  8. test_canonical_name_equals_url – canonical_name == raw URL string (not slug)
 """
 from __future__ import annotations
 
@@ -61,14 +62,18 @@ def test_extract_title_falls_back_to_url_when_title_empty() -> None:
 # ---------------------------------------------------------------------------
 
 class _FakeAlertService:
-    """Minimal stand-in for AlertService that counts process_official_page calls."""
+    """Minimal stand-in for AlertService that counts process_official_page calls.
+
+    process_official_page returns an int directly (not a dict), matching the
+    contract required by run_official_pages_job.
+    """
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    def process_official_page(self, page_config, observation: dict) -> dict:
+    def process_official_page(self, page_config, observation: dict) -> int:
         self.calls.append({"page_config": page_config, "observation": observation})
-        return {"created": 1}
+        return 1
 
 
 def test_run_official_pages_job_creates_alert(tmp_path: Path) -> None:
@@ -198,3 +203,31 @@ def test_display_name_matches_extracted_title(tmp_path: Path) -> None:
     observation = alert_service.calls[0]["observation"]
     # display_name must be the extracted <h1> title, NOT a URL-derived slug.
     assert observation["display_name"] == "DeepSeek V3 Released"
+
+
+# ---------------------------------------------------------------------------
+# Test 8: canonical_name equals the raw URL string
+# ---------------------------------------------------------------------------
+
+def test_canonical_name_equals_url(tmp_path: Path) -> None:
+    """The observation's canonical_name must be the raw URL, not a slug derived from it."""
+    from radar.core.db import create_engine_and_session_factory, init_db
+    from radar.core.repositories import RadarRepository
+    from radar.core.config import OfficialPageEntry
+    from radar.jobs.official_pages import run_official_pages_job
+
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+    alert_service = _FakeAlertService()
+    html = FIXTURE_HTML.read_text()
+
+    url = "https://api-docs.deepseek.com/"
+    page_config = OfficialPageEntry(
+        url=url,  # type: ignore[arg-type]
+        whitelist_keywords=["release"],
+    )
+    run_official_pages_job(page_config, lambda _: html, repo, alert_service)
+
+    observation = alert_service.calls[0]["observation"]
+    assert observation["canonical_name"] == url

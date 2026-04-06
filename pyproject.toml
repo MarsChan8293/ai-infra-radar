@@ -20,6 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.3,<10.0",
+  "respx>=0.20,<1.0",
 ]
 
 [tool.setuptools.packages.find]
