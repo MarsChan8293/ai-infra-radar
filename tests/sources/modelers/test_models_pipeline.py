@@ -68,6 +68,20 @@ def test_modelers_client_propagates_timeout_failure() -> None:
         client.list_models_for_organization("MindSpore-Lab")
 
 
+@respx.mock
+def test_modelers_client_rejects_malformed_success_payload() -> None:
+    from radar.sources.modelers.client import ModelersClient
+
+    respx.get("https://modelers.cn/server/model").mock(
+        return_value=httpx.Response(200, json={"code": "", "msg": "", "data": {}})
+    )
+
+    client = ModelersClient()
+
+    with pytest.raises(ValueError):
+        client.list_models_for_organization("MindSpore-Lab")
+
+
 def test_build_modelers_observation_normalizes_core_fields() -> None:
     from radar.sources.modelers.pipeline import build_modelers_observation
 

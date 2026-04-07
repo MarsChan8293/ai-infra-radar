@@ -91,6 +91,15 @@ def test_ui_script_clears_stale_ui_state() -> None:
     assert 'result.textContent = "Config reload failed."' in response.text
 
 
+def test_ui_styles_preserve_alert_detail_whitespace() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/static/ui/styles.css")
+
+    assert response.status_code == 200
+    assert "white-space: pre-wrap" in response.text
+
+
 def test_readme_mentions_ui_entrypoint() -> None:
     readme = Path("README.md").read_text()
 

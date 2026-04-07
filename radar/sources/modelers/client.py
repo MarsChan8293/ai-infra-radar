@@ -23,5 +23,7 @@ class ModelersClient:
         )
         response.raise_for_status()
         body = response.json()
-        return body.get("data", {}).get("models", [])
-
+        data = body.get("data")
+        if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+            raise ValueError(f"Modelers API returned malformed payload: {body!r}")
+        return data["models"]

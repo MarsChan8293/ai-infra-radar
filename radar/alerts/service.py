@@ -192,7 +192,7 @@ class AlertService:
             entity_id=entity.id,
             source="modelscope",
             score=1.0,
-            dedupe_key=f"ms:{alert_type}:{normalized['model_id']}:{normalized['last_updated_time']}",
+            dedupe_key=f"modelscope:{alert_type}:{normalized['model_id']}:{normalized['last_updated_time']}",
             reason={
                 "model_id": normalized["model_id"],
                 "last_updated_time": normalized["last_updated_time"],

@@ -27,6 +27,11 @@ def test_gitcode_client_lists_org_repositories() -> None:
     items = client.list_repositories_for_organization("gitcode")
 
     assert route.called
+    request = route.calls.last.request
+    assert request.headers["Authorization"] == "Bearer token"
+    assert request.url.params["type"] == "public"
+    assert request.url.params["page"] == "1"
+    assert request.url.params["per_page"] == "100"
     assert items[0]["full_name"] == "gitcode/example-repo"
 
 
@@ -75,6 +80,8 @@ def test_build_gitcode_observation_maps_fields() -> None:
     assert observation["canonical_name"] == "gitcode:gitcode/example-repo"
     assert observation["display_name"] == "gitcode/example-repo"
     assert observation["url"] == "https://gitcode.com/gitcode/example-repo"
+    assert observation["normalized_payload"]["organization"] == "gitcode"
+    assert observation["normalized_payload"]["repo_name"] == "example-repo"
     assert observation["normalized_payload"]["updated_at"] == "2026-04-07T00:00:00Z"
 
 

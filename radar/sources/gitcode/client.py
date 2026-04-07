@@ -11,9 +11,10 @@ class GitCodeClient:
         self._token = token
         self._timeout = timeout
 
-    def list_repositories_for_organization(self, organization: str) -> list[dict]:
+    def list_repositories_for_organization(self, organization: str, per_page: int = 100) -> list[dict]:
         response = httpx.get(
             self.BASE_URL.format(organization=organization),
+            params={"type": "public", "page": 1, "per_page": per_page},
             headers={"Authorization": f"Bearer {self._token}"},
             timeout=self._timeout,
         )

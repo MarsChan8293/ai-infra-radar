@@ -142,6 +142,7 @@ def test_process_modelscope_model_creates_new_model_alert(repo) -> None:
     alerts = repo.list_alerts()
     assert len(alerts) == 1
     assert alerts[0].alert_type == "modelscope_model_new"
+    assert alerts[0].dedupe_key == "modelscope:modelscope_model_new:deepseek/deepseek-v1:2026-04-07T00:00:00Z"
 
 
 def test_process_modelscope_model_skips_unchanged_model(repo) -> None:

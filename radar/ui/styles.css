@@ -82,3 +82,7 @@ body {
   border-radius: 8px;
   padding: 12px;
 }
+
+.detail-card {
+  white-space: pre-wrap;
+}
