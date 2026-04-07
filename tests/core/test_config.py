@@ -83,6 +83,42 @@ def test_validate_config_cli_command() -> None:
     assert "config ok" in result.output
 
 
+def test_backfill_source_huggingface_runs_registered_job(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text((FIXTURES_DIR / "minimal.yaml").read_text())
+    executed_jobs: list[str] = []
+
+    class FakeScheduler:
+        def known_jobs(self) -> list[str]:
+            return ["huggingface_models"]
+
+        def run(self, job_name: str) -> bool:
+            executed_jobs.append(job_name)
+            return True
+
+    class FakeEngine:
+        def dispose(self) -> None:
+            pass
+
+    class FakeRuntime:
+        scheduler = FakeScheduler()
+        engine = FakeEngine()
+
+    monkeypatch.setattr("radar.cli.build_runtime", lambda path: FakeRuntime())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["backfill-source", "huggingface", "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0
+    assert executed_jobs == ["huggingface_models"]
+    assert "huggingface_models: executed" in result.output
+
+
 # --- TDD: unknown keys must be rejected ---
 
 def test_unknown_top_level_key_raises(tmp_path: Path) -> None:

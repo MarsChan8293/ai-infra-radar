@@ -124,6 +124,66 @@ def test_reload_rebuilds_runtime_with_new_jobs(tmp_path: Path) -> None:
         assert set(app.state.scheduler.known_jobs()) == {"official_pages", "github_burst", "daily_digest"}
 
 
+def test_reload_registers_huggingface_job_when_enabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["huggingface"] = {
+        "enabled": True,
+        "organizations": ["deepseek"],
+    }
+    config_path.write_text(yaml.dump(config))
+
+    app = create_app()
+    app.state.config_path = config_path
+
+    with TestClient(app) as client:
+        resp = client.post("/config/reload")
+        assert resp.status_code == 200
+        assert set(app.state.scheduler.known_jobs()) == {"daily_digest", "huggingface_models"}
+
+
+def test_huggingface_job_continues_after_organization_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["huggingface"] = {
+        "enabled": True,
+        "organizations": ["broken-org", "deepseek"],
+    }
+    config_path.write_text(yaml.dump(config))
+
+    item = {
+        "id": "deepseek/deepseek-v3",
+        "lastModified": "2026-04-07T00:00:00Z",
+        "downloads": 123,
+        "likes": 9,
+        "pipeline_tag": "text-generation",
+    }
+
+    class FakeHuggingFaceClient:
+        def list_models_for_organization(self, organization: str) -> list[dict]:
+            if organization == "broken-org":
+                raise RuntimeError("boom")
+            if organization == "deepseek":
+                return [item]
+            raise AssertionError(f"unexpected organization: {organization}")
+
+    monkeypatch.setattr("radar.app.HuggingFaceClient", FakeHuggingFaceClient)
+
+    from radar.app import build_runtime
+
+    runtime = build_runtime(config_path)
+    try:
+        with pytest.raises(RuntimeError, match="broken-org"):
+            runtime.scheduler.run("huggingface_models")
+        alerts = runtime.repo.list_alerts()
+        assert len(alerts) == 1
+        assert alerts[0].alert_type == "huggingface_model_new"
+    finally:
+        runtime.engine.dispose()
+
+
 def test_reload_with_invalid_config_returns_422(tmp_path: Path) -> None:
     config_path = tmp_path / "bad.yaml"
     config_path.write_text("not_a_valid_radar_config: true\n")

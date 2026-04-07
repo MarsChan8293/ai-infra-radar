@@ -1,6 +1,6 @@
 # ai-infra-radar
 
-Track AI infrastructure releases, GitHub activity bursts, and deliver a daily digest via webhook or email.
+Track AI infrastructure releases, Hugging Face model updates, GitHub activity bursts, and deliver a daily digest via webhook or email.
 
 ## Bootstrap
 
@@ -49,6 +49,10 @@ sources:
         whitelist_keywords:
           - release
           - update
+  huggingface:
+    enabled: false
+    organizations:
+      - deepseek
 ```
 
 ## Run the server
@@ -66,7 +70,7 @@ Key endpoints:
 | `POST` | `/jobs/run/{job_name}` | Trigger a job immediately |
 | `POST` | `/config/reload` | Hot-reload `config.yaml` without restart |
 
-Registered job names: `official_pages`, `github_burst`, `daily_digest`.
+Registered job names: `official_pages`, `github_burst`, `huggingface_models`, `daily_digest`.
 
 ## MVP paths
 
@@ -91,7 +95,17 @@ burst score (stars × forks normalised) meets `burst_threshold` emit a
 curl -X POST http://localhost:8000/jobs/run/github_burst
 ```
 
-### 3 · Daily digest
+### 3 · Hugging Face model monitoring
+
+Polls configured Hugging Face organizations and emits one alert when a model is
+first seen, plus an update alert when the upstream `lastModified` timestamp
+changes.
+
+```bash
+curl -X POST http://localhost:8000/jobs/run/huggingface_models
+```
+
+### 4 · Daily digest
 
 Once per day the digest job ranks all stored alerts by score (descending) and
 dispatches a single summary payload to every enabled channel.
@@ -108,9 +122,11 @@ python3 -m radar.cli validate-config config/radar.yaml
 
 # Trigger a job from the CLI
 python3 -m radar.cli run-job github_burst --config config/radar.yaml
+python3 -m radar.cli run-job huggingface_models --config config/radar.yaml
 
 # Backfill one source
 python3 -m radar.cli backfill-source github --config config/radar.yaml
+python3 -m radar.cli backfill-source huggingface --config config/radar.yaml
 
 # Send a test webhook
 python3 -m radar.cli send-test-notification webhook --config config/radar.yaml

@@ -20,8 +20,10 @@ from radar.core.repositories import RadarRepository
 from radar.core.scheduler import RadarScheduler
 from radar.jobs.daily_digest import run_daily_digest_job
 from radar.jobs.github_burst import run_github_burst_job
+from radar.jobs.huggingface_models import run_huggingface_models_job
 from radar.jobs.official_pages import run_official_pages_job
 from radar.sources.github.client import GitHubClient
+from radar.sources.huggingface.client import HuggingFaceClient
 from radar.sources.official_pages.client import fetch_html
 
 
@@ -82,6 +84,7 @@ def build_runtime(config_path: Path) -> RuntimeState:
         channels=_build_channels(settings),
     )
     github_client = GitHubClient(settings.sources.github.token)
+    huggingface_client = HuggingFaceClient()
     scheduler = RadarScheduler(timezone=settings.app.timezone)
 
     if settings.sources.official_pages.enabled:
@@ -113,6 +116,34 @@ def build_runtime(config_path: Path) -> RuntimeState:
             )
 
         scheduler.register("github_burst", _run_github_burst, minutes=15)
+
+    if settings.sources.huggingface.enabled:
+
+        def _run_huggingface_models() -> int:
+            created = 0
+            failures: list[tuple[str, Exception]] = []
+            for organization in settings.sources.huggingface.organizations:
+                try:
+                    items = huggingface_client.list_models_for_organization(organization)
+                except Exception as exc:
+                    failures.append((organization, exc))
+                    continue
+                created += run_huggingface_models_job(
+                    items,
+                    repository=repo,
+                    alert_service=alert_service,
+                )
+            if failures:
+                failed_organizations = ", ".join(
+                    f"{organization} ({exc})" for organization, exc in failures
+                )
+                raise RuntimeError(
+                    "huggingface_models failed for organizations: "
+                    f"{failed_organizations}"
+                )
+            return created
+
+        scheduler.register("huggingface_models", _run_huggingface_models, minutes=30)
 
     daily_digest_channels = _build_channels(settings)
 

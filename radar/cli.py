@@ -8,6 +8,11 @@ from radar.app import build_runtime
 from radar.core.config import load_settings
 
 cli = typer.Typer(no_args_is_help=True)
+_SOURCE_TO_JOB = {
+    "official_pages": "official_pages",
+    "github": "github_burst",
+    "huggingface": "huggingface_models",
+}
 
 
 @cli.callback()
@@ -48,7 +53,6 @@ def backfill_source(
     config: Path = typer.Option(..., "--config", help="Path to radar.yaml"),
 ) -> None:
     """Re-run all jobs for a given source (alias for run-job)."""
-    _SOURCE_TO_JOB = {"official_pages": "official_pages", "github": "github_burst"}
     if source not in _SOURCE_TO_JOB:
         typer.echo(f"error: unknown source {source!r}. known sources: {sorted(_SOURCE_TO_JOB)}", err=True)
         raise typer.Exit(1)

@@ -1,4 +1,4 @@
-"""Smoke tests covering the three MVP paths end-to-end (no real network calls)."""
+"""Smoke tests covering the current source and digest paths end-to-end."""
 from __future__ import annotations
 
 from pydantic import HttpUrl
@@ -6,6 +6,7 @@ from pydantic import HttpUrl
 from radar.core.config import OfficialPageEntry
 from radar.jobs.daily_digest import run_daily_digest_job
 from radar.jobs.github_burst import run_github_burst_job
+from radar.jobs.huggingface_models import run_huggingface_models_job
 from radar.jobs.official_pages import run_official_pages_job
 
 
@@ -102,7 +103,32 @@ def test_github_burst_path_below_threshold_skips(repo, alert_service) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Path 3 – Daily digest
+# Path 3 – Hugging Face models
+# ---------------------------------------------------------------------------
+
+def test_huggingface_models_path_creates_alert(repo, alert_service) -> None:
+    item = {
+        "id": "deepseek/deepseek-v3",
+        "author": "deepseek",
+        "lastModified": "2026-04-07T00:00:00Z",
+        "private": False,
+        "gated": False,
+    }
+
+    created = run_huggingface_models_job(
+        [item],
+        repository=repo,
+        alert_service=alert_service,
+    )
+
+    assert created == 1
+    alerts = repo.list_alerts()
+    assert len(alerts) == 1
+    assert alerts[0].alert_type == "huggingface_model_new"
+
+
+# ---------------------------------------------------------------------------
+# Path 4 – Daily digest
 # ---------------------------------------------------------------------------
 
 def _seed_alert(repo, source: str, score: float, idx: int = 0):
