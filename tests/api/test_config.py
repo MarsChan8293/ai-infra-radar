@@ -30,6 +30,7 @@ def _minimal_config(storage_path: str) -> dict:
         "sources": {
             "github": {"enabled": False},
             "official_pages": {"enabled": False},
+            "huggingface": {"enabled": False},
         },
     }
 
@@ -109,6 +110,7 @@ def test_reload_rebuilds_runtime_with_new_jobs(tmp_path: Path) -> None:
                                 }
                             ],
                         },
+                        "huggingface": {"enabled": False},
                     },
                 }
             )

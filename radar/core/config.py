@@ -84,10 +84,23 @@ class OfficialPagesSettings(BaseModel):
         return self
 
 
+class HuggingFaceSettings(BaseModel):
+    model_config = _FORBID
+    enabled: bool
+    organizations: list[str] = []
+
+    @model_validator(mode="after")
+    def _require_orgs_when_enabled(self) -> "HuggingFaceSettings":
+        if self.enabled and not self.organizations:
+            raise ValueError("organizations must contain at least one entry when huggingface is enabled")
+        return self
+
+
 class SourceSettings(BaseModel):
     model_config = _FORBID
     github: GitHubSettings
     official_pages: OfficialPagesSettings
+    huggingface: HuggingFaceSettings
 
 
 class Settings(BaseModel):

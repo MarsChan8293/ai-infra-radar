@@ -45,6 +45,8 @@ sources:
         whitelist_keywords:
           - release
           - update
+  huggingface:
+    enabled: false
 """.strip()
     )
 
@@ -156,10 +158,69 @@ sources:
     enabled: false
   official_pages:
     enabled: false
+  huggingface:
+    enabled: false
 """.strip()
     )
     settings = load_settings(config_path)
     assert settings.sources.github.enabled is False
+
+
+def test_huggingface_enabled_requires_organizations(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: true
+    organizations: []
+""".strip()
+    )
+
+    with pytest.raises(ValueError, match="organizations"):
+        load_settings(config_path)
+
+
+def test_huggingface_enabled_accepts_organizations(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: true
+    organizations:
+      - deepseek
+""".strip()
+    )
+
+    settings = load_settings(config_path)
+    assert settings.sources.huggingface.organizations == ["deepseek"]
 
 
 def test_official_pages_enabled_with_no_pages_raises(tmp_path: Path) -> None:
@@ -207,6 +268,8 @@ sources:
     enabled: false
   official_pages:
     enabled: false
+  huggingface:
+    enabled: false
 """.strip()
     )
     settings = load_settings(config_path)
@@ -234,6 +297,8 @@ sources:
     enabled: false
   official_pages:
     enabled: false
+  huggingface:
+    enabled: false
 """.strip()
     )
     with pytest.raises(ValidationError, match="url"):
@@ -258,6 +323,8 @@ sources:
   github:
     enabled: false
   official_pages:
+    enabled: false
+  huggingface:
     enabled: false
 """.strip()
     )
@@ -284,6 +351,8 @@ sources:
   github:
     enabled: false
   official_pages:
+    enabled: false
+  huggingface:
     enabled: false
 """.strip()
     )

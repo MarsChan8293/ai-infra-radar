@@ -29,3 +29,5 @@ sources:
         whitelist_keywords:
           - release
           - update
+  huggingface:
+    enabled: false
