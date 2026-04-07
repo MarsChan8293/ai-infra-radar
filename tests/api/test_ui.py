@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from pathlib import Path
 
 from radar.app import create_app
 
@@ -23,3 +24,65 @@ def test_ui_static_assets_are_served() -> None:
     assert styles.headers["content-type"].startswith("text/css")
     assert script.status_code == 200
     assert "fetch" in script.text
+
+
+def test_ui_shell_contains_alerts_panel_hooks() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/ui")
+
+    assert response.status_code == 200
+    assert 'data-panel="alerts"' in response.text
+    assert 'id="alerts-list"' in response.text
+    assert 'id="alert-detail"' in response.text
+    assert 'id="refresh-alerts"' in response.text
+
+
+def test_ui_script_contains_alerts_api_wiring() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/static/ui/app.js")
+
+    assert response.status_code == 200
+    assert 'fetchJson("/alerts")' in response.text
+    assert "loadAlertDetail" in response.text
+
+
+def test_ui_shell_contains_job_controls() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/ui")
+
+    assert response.status_code == 200
+    assert 'data-job="official_pages"' in response.text
+    assert 'data-job="github_burst"' in response.text
+    assert 'data-job="huggingface_models"' in response.text
+    assert 'data-job="daily_digest"' in response.text
+
+
+def test_ui_shell_contains_runtime_controls() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/ui")
+
+    assert response.status_code == 200
+    assert 'id="reload-config"' in response.text
+    assert 'id="runtime-status"' in response.text
+    assert 'id="jobs-status"' in response.text
+
+
+def test_ui_script_contains_jobs_and_reload_api_wiring() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/static/ui/app.js")
+
+    assert response.status_code == 200
+    assert 'fetchJson(`/jobs/run/${jobName}`' in response.text
+    assert 'fetchJson("/config/reload"' in response.text
+
+
+def test_readme_mentions_ui_entrypoint() -> None:
+    readme = Path("README.md").read_text()
+
+    assert "/ui" in readme
+    assert "Operations UI" in readme

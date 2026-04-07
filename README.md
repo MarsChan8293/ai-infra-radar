@@ -85,6 +85,26 @@ Key endpoints:
 
 Registered job names: `official_pages`, `github_burst`, `huggingface_models`, `modelscope_models`, `modelers_models`, `gitcode_repos`, `daily_digest`.
 
+## Operations UI
+
+Start the server with a valid config:
+
+```bash
+RADAR_CONFIG=config/radar.yaml uvicorn radar.main:app --reload
+```
+
+Then visit:
+
+```text
+http://127.0.0.1:8000/ui
+```
+
+The current UI includes:
+
+- alert list and detail inspection
+- manual job trigger buttons
+- config reload feedback
+
 ## MVP paths
 
 ### 1 · Official-page monitoring
