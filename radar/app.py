@@ -39,6 +39,7 @@ class RuntimeState:
     scheduler: RadarScheduler
     alert_service: AlertService
     github_client: GitHubClient
+    huggingface_client: Any
     modelscope_client: Any
 
 
@@ -201,6 +202,7 @@ def build_runtime(config_path: Path) -> RuntimeState:
         scheduler=scheduler,
         alert_service=alert_service,
         github_client=github_client,
+        huggingface_client=huggingface_client,
         modelscope_client=modelscope_client,
     )
 
@@ -221,6 +223,7 @@ def apply_runtime(app: FastAPI, runtime: RuntimeState) -> None:
     app.state.scheduler = runtime.scheduler
     app.state.alert_service = runtime.alert_service
     app.state.github_client = runtime.github_client
+    app.state.huggingface_client = runtime.huggingface_client
     app.state.modelscope_client = runtime.modelscope_client
     runtime.scheduler.start()
 
@@ -257,4 +260,6 @@ def create_app(lifespan: Any = None) -> FastAPI:
     app.state.config_path = None
     app.state.alert_service = None
     app.state.github_client = None
+    app.state.huggingface_client = None
+    app.state.modelscope_client = None
     return app
