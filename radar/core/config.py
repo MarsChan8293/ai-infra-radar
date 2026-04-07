@@ -96,11 +96,24 @@ class HuggingFaceSettings(BaseModel):
         return self
 
 
+class ModelScopeSettings(BaseModel):
+    model_config = _FORBID
+    enabled: bool
+    organizations: list[str] = []
+
+    @model_validator(mode="after")
+    def _require_orgs_when_enabled(self) -> "ModelScopeSettings":
+        if self.enabled and not self.organizations:
+            raise ValueError("organizations must contain at least one entry when modelscope is enabled")
+        return self
+
+
 class SourceSettings(BaseModel):
     model_config = _FORBID
     github: GitHubSettings
     official_pages: OfficialPagesSettings
     huggingface: HuggingFaceSettings
+    modelscope: ModelScopeSettings = ModelScopeSettings(enabled=False)
 
 
 class Settings(BaseModel):

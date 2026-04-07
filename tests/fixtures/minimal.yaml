@@ -31,3 +31,5 @@ sources:
           - update
   huggingface:
     enabled: false
+  modelscope:
+    enabled: false

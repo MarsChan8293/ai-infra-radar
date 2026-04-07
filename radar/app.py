@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from radar.alerts.dispatcher import AlertDispatcher
 from radar.alerts.email import send_email
@@ -25,6 +26,7 @@ from radar.jobs.huggingface_models import run_huggingface_models_job
 from radar.jobs.official_pages import run_official_pages_job
 from radar.sources.github.client import GitHubClient
 from radar.sources.huggingface.client import HuggingFaceClient
+from radar.sources.modelscope.client import ModelScopeClient
 from radar.sources.official_pages.client import fetch_html
 
 
@@ -37,6 +39,7 @@ class RuntimeState:
     scheduler: RadarScheduler
     alert_service: AlertService
     github_client: GitHubClient
+    modelscope_client: Any
 
 
 def _build_channels(settings: Settings) -> dict[str, Any]:
@@ -86,6 +89,7 @@ def build_runtime(config_path: Path) -> RuntimeState:
     )
     github_client = GitHubClient(settings.sources.github.token)
     huggingface_client = HuggingFaceClient()
+    modelscope_client = ModelScopeClient()
     scheduler = RadarScheduler(timezone=settings.app.timezone)
 
     if settings.sources.official_pages.enabled:
@@ -146,6 +150,36 @@ def build_runtime(config_path: Path) -> RuntimeState:
 
         scheduler.register("huggingface_models", _run_huggingface_models, minutes=30)
 
+    if settings.sources.modelscope.enabled:
+
+        def _run_modelscope_models() -> int:
+            created = 0
+            failures: list[tuple[str, Exception]] = []
+            for organization in settings.sources.modelscope.organizations:
+                try:
+                    items = modelscope_client.list_models_for_organization(organization)
+                except Exception as exc:
+                    failures.append((organization, exc))
+                    continue
+                from radar.jobs.modelscope_models import run_modelscope_models_job
+
+                created += run_modelscope_models_job(
+                    items,
+                    repository=repo,
+                    alert_service=alert_service,
+                )
+            if failures:
+                failed_organizations = ", ".join(
+                    f"{organization} ({exc})" for organization, exc in failures
+                )
+                raise RuntimeError(
+                    "modelscope_models failed for organizations: "
+                    f"{failed_organizations}"
+                )
+            return created
+
+        scheduler.register("modelscope_models", _run_modelscope_models, minutes=30)
+
     daily_digest_channels = _build_channels(settings)
 
     def _dispatch_daily_digest(payload: dict) -> None:
@@ -168,6 +202,7 @@ def build_runtime(config_path: Path) -> RuntimeState:
         scheduler=scheduler,
         alert_service=alert_service,
         github_client=github_client,
+        modelscope_client=modelscope_client,
     )
 
 
@@ -187,6 +222,7 @@ def apply_runtime(app: FastAPI, runtime: RuntimeState) -> None:
     app.state.scheduler = runtime.scheduler
     app.state.alert_service = runtime.alert_service
     app.state.github_client = runtime.github_client
+    app.state.modelscope_client = runtime.modelscope_client
     runtime.scheduler.start()
 
 

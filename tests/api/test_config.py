@@ -31,6 +31,7 @@ def _minimal_config(storage_path: str) -> dict:
             "github": {"enabled": False},
             "official_pages": {"enabled": False},
             "huggingface": {"enabled": False},
+            "modelscope": {"enabled": False},
         },
     }
 
@@ -111,6 +112,7 @@ def test_reload_rebuilds_runtime_with_new_jobs(tmp_path: Path) -> None:
                             ],
                         },
                         "huggingface": {"enabled": False},
+                        "modelscope": {"enabled": False},
                     },
                 }
             )
@@ -131,6 +133,7 @@ def test_reload_registers_huggingface_job_when_enabled(tmp_path: Path) -> None:
         "enabled": True,
         "organizations": ["deepseek"],
     }
+    config["sources"]["modelscope"] = {"enabled": False}
     config_path.write_text(yaml.dump(config))
 
     app = create_app()
@@ -151,6 +154,7 @@ def test_huggingface_job_continues_after_organization_failure(
         "enabled": True,
         "organizations": ["broken-org", "deepseek"],
     }
+    config["sources"]["modelscope"] = {"enabled": True, "organizations": ["broken-org", "deepseek"]}
     config_path.write_text(yaml.dump(config))
 
     item = {

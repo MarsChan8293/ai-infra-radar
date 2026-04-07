@@ -12,6 +12,7 @@ _SOURCE_TO_JOB = {
     "official_pages": "official_pages",
     "github": "github_burst",
     "huggingface": "huggingface_models",
+    "modelscope": "modelscope_models",
 }
 
 

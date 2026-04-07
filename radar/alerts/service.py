@@ -150,6 +150,60 @@ class AlertService:
             alert_payload={"title": observation.get("title", ""), "url": url, "score": observation["score"]},
         )
 
+    def process_modelscope_model(
+        self,
+        observation: dict,
+    ) -> int:
+        """Persist a ModelScope model observation and emit new/update alerts."""
+        normalized = observation["normalized_payload"]
+        canonical_name = observation["canonical_name"]
+        existing_entity = self._repo.get_entity_by_canonical_name(canonical_name)
+        existing_observation = (
+            self._repo.get_latest_observation_for_entity(existing_entity.id, source="modelscope")
+            if existing_entity is not None
+            else None
+        )
+        is_new = existing_entity is None
+
+        if existing_observation is not None:
+            previous_last_modified = existing_observation.normalized_payload["last_updated_time"]
+            if previous_last_modified == normalized["last_updated_time"]:
+                return 0
+
+        entity = self._repo.upsert_entity(
+            source="modelscope",
+            entity_type="model",
+            canonical_name=canonical_name,
+            display_name=observation["display_name"],
+            url=observation["url"],
+        )
+        self._repo.record_observation(
+            entity_id=entity.id,
+            source="modelscope",
+            raw_payload=observation["raw_payload"],
+            normalized_payload=normalized,
+            dedupe_key=observation["content_hash"],
+            content_hash=observation["content_hash"],
+        )
+
+        alert_type = "modelscope_model_new" if is_new else "modelscope_model_updated"
+        return self.emit_alert(
+            alert_type=alert_type,
+            entity_id=entity.id,
+            source="modelscope",
+            score=1.0,
+            dedupe_key=f"ms:{alert_type}:{normalized['model_id']}:{normalized['last_updated_time']}",
+            reason={
+                "model_id": normalized["model_id"],
+                "last_updated_time": normalized["last_updated_time"],
+            },
+            alert_payload={
+                "title": normalized["model_id"],
+                "url": observation["url"],
+                "score": 1.0,
+            },
+        )
+
     def process_huggingface_model(
         self,
         observation: dict,
