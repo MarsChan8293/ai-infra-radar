@@ -7,7 +7,6 @@ from radar.sources.modelscope.pipeline import build_modelscope_observation
 def run_modelscope_models_job(
     items: list[dict],
     *,
-    repository,
     alert_service,
 ) -> int:
     created = 0

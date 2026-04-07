@@ -162,7 +162,6 @@ def test_run_modelscope_models_job_returns_created_count(repo) -> None:
 
     created = run_modelscope_models_job(
         [item],
-        repository=repo,
         alert_service=FakeAlertService(),
     )
 

@@ -165,7 +165,6 @@ def build_runtime(config_path: Path) -> RuntimeState:
 
                 created += run_modelscope_models_job(
                     items,
-                    repository=repo,
                     alert_service=alert_service,
                 )
             if failures:
