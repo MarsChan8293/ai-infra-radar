@@ -189,7 +189,7 @@ sources:
 """.strip()
     )
 
-    with pytest.raises(ValueError, match="organizations"):
+    with pytest.raises(ValidationError, match="organizations"):
         load_settings(config_path)
 
 
@@ -217,7 +217,7 @@ sources:
 """.strip()
     )
 
-    with pytest.raises(ValueError, match="organizations"):
+    with pytest.raises(ValidationError, match="organizations"):
         load_settings(config_path)
 
 
