@@ -269,10 +269,6 @@ def shutdown_runtime(app: FastAPI) -> None:
     if engine is not None:
         engine.dispose()
 
-
-from fastapi.staticfiles import StaticFiles
-
-
 def create_app(lifespan: Any = None) -> FastAPI:
     app = FastAPI(title="AI Infra Radar", lifespan=lifespan)
     app.include_router(health_router)

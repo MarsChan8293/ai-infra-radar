@@ -10,8 +10,19 @@ def test_modelscope_client_lists_models_for_organization() -> None:
     from radar.sources.modelscope.client import ModelScopeClient
 
     payload = {
-        "Code": 0,
-        "Data": {"Models": [{"Id": 1, "Name": "deepseek-v1", "Path": "deepseek/deepseek-v1", "CreatedTime": "2026-04-01T00:00:00Z", "LastUpdatedTime": "2026-04-07T00:00:00Z", "Downloads": 10}]},
+        "Code": 200,
+        "Data": {
+            "Models": [
+                {
+                    "Id": 1,
+                    "Name": "deepseek-v1",
+                    "Path": "deepseek",
+                    "CreatedTime": "2026-04-01T00:00:00Z",
+                    "LastUpdatedTime": "2026-04-07T00:00:00Z",
+                    "Downloads": 10,
+                }
+            ]
+        },
         "Message": "ok",
         "RequestId": "",
         "Success": True,
@@ -57,15 +68,46 @@ def test_modelscope_client_propagates_timeout_failure() -> None:
         client.list_models_for_organization("deepseek")
 
 
+@respx.mock
+def test_modelscope_client_rejects_unsuccessful_success_envelope() -> None:
+    from radar.sources.modelscope.client import ModelScopeClient
+
+    respx.put("https://www.modelscope.cn/api/v1/models/").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "Code": 500,
+                "Data": {"Models": []},
+                "Message": "error",
+                "RequestId": "",
+                "Success": False,
+            },
+        )
+    )
+
+    client = ModelScopeClient()
+
+    with pytest.raises(ValueError):
+        client.list_models_for_organization("deepseek")
+
+
 def test_build_modelscope_observation_normalizes_core_fields() -> None:
     from radar.sources.modelscope.pipeline import build_modelscope_observation
 
-    item = {"Id": 1, "Name": "deepseek-v1", "Path": "deepseek/deepseek-v1", "LastUpdatedTime": "2026-04-07T00:00:00Z", "Downloads": 10}
+    item = {
+        "Id": 1,
+        "Name": "deepseek-v1",
+        "Path": "deepseek",
+        "CreatedTime": "2026-04-01T00:00:00Z",
+        "LastUpdatedTime": "2026-04-07T00:00:00Z",
+        "Downloads": 10,
+    }
     observation = build_modelscope_observation(item)
 
     assert observation["canonical_name"] == "modelscope:deepseek/deepseek-v1"
-    assert observation["display_name"] == "deepseek-v1"
+    assert observation["display_name"] == "deepseek/deepseek-v1"
     assert observation["url"] == "https://www.modelscope.cn/models/deepseek/deepseek-v1"
+    assert observation["normalized_payload"]["created_time"] == "2026-04-01T00:00:00Z"
     assert observation["normalized_payload"]["last_updated_time"] == "2026-04-07T00:00:00Z"
 
 
@@ -84,7 +126,14 @@ def test_process_modelscope_model_creates_new_model_alert(repo) -> None:
         dispatcher=dispatcher,
         channels={"webhook": "https://hooks.example.com/test"},
     )
-    item = {"Id": 1, "Name": "deepseek-v1", "Path": "deepseek/deepseek-v1", "LastUpdatedTime": "2026-04-07T00:00:00Z", "Downloads": 10}
+    item = {
+        "Id": 1,
+        "Name": "deepseek-v1",
+        "Path": "deepseek",
+        "CreatedTime": "2026-04-01T00:00:00Z",
+        "LastUpdatedTime": "2026-04-07T00:00:00Z",
+        "Downloads": 10,
+    }
     observation = build_modelscope_observation(item)
 
     created = service.process_modelscope_model(observation)
@@ -110,7 +159,14 @@ def test_process_modelscope_model_skips_unchanged_model(repo) -> None:
         dispatcher=dispatcher,
         channels={"webhook": "https://hooks.example.com/test"},
     )
-    item = {"Id": 1, "Name": "deepseek-v1", "Path": "deepseek/deepseek-v1", "LastUpdatedTime": "2026-04-07T00:00:00Z", "Downloads": 10}
+    item = {
+        "Id": 1,
+        "Name": "deepseek-v1",
+        "Path": "deepseek",
+        "CreatedTime": "2026-04-01T00:00:00Z",
+        "LastUpdatedTime": "2026-04-07T00:00:00Z",
+        "Downloads": 10,
+    }
     observation = build_modelscope_observation(item)
 
     first = service.process_modelscope_model(observation)
@@ -136,7 +192,14 @@ def test_process_modelscope_model_emits_updated_model_alert(repo) -> None:
         dispatcher=dispatcher,
         channels={"webhook": "https://hooks.example.com/test"},
     )
-    item = {"Id": 1, "Name": "deepseek-v1", "Path": "deepseek/deepseek-v1", "LastUpdatedTime": "2026-04-07T00:00:00Z", "Downloads": 10}
+    item = {
+        "Id": 1,
+        "Name": "deepseek-v1",
+        "Path": "deepseek",
+        "CreatedTime": "2026-04-01T00:00:00Z",
+        "LastUpdatedTime": "2026-04-07T00:00:00Z",
+        "Downloads": 10,
+    }
     updated_item = {**item, "LastUpdatedTime": "2026-04-08T00:00:00Z"}
 
     first = service.process_modelscope_model(build_modelscope_observation(item))
@@ -153,7 +216,14 @@ def test_process_modelscope_model_emits_updated_model_alert(repo) -> None:
 def test_run_modelscope_models_job_returns_created_count(repo) -> None:
     from radar.jobs.modelscope_models import run_modelscope_models_job
 
-    item = {"Id": 1, "Name": "deepseek-v1", "Path": "deepseek/deepseek-v1", "LastUpdatedTime": "2026-04-07T00:00:00Z", "Downloads": 10}
+    item = {
+        "Id": 1,
+        "Name": "deepseek-v1",
+        "Path": "deepseek",
+        "CreatedTime": "2026-04-01T00:00:00Z",
+        "LastUpdatedTime": "2026-04-07T00:00:00Z",
+        "Downloads": 10,
+    }
 
     class FakeAlertService:
         def process_modelscope_model(self, observation: dict) -> int:
