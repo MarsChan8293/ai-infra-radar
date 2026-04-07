@@ -44,6 +44,12 @@ class RadarRepository:
             session.refresh(entity)
             return entity
 
+    def get_entity_by_canonical_name(self, canonical_name: str) -> Entity | None:
+        with self._session_factory() as session:
+            return session.scalar(
+                select(Entity).where(Entity.canonical_name == canonical_name)
+            )
+
     def record_observation(
         self,
         *,
@@ -67,6 +73,19 @@ class RadarRepository:
             session.commit()
             session.refresh(observation)
             return observation
+
+    def get_latest_observation_for_entity(
+        self,
+        entity_id: int,
+        *,
+        source: str,
+    ) -> Observation | None:
+        with self._session_factory() as session:
+            return session.scalar(
+                select(Observation)
+                .where(Observation.entity_id == entity_id, Observation.source == source)
+                .order_by(Observation.id.desc())
+            )
 
     def create_alert(
         self,
