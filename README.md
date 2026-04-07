@@ -1,6 +1,6 @@
 # ai-infra-radar
 
-Track AI infrastructure releases, Hugging Face model updates, GitHub activity bursts, and deliver a daily digest via webhook or email.
+Track AI infrastructure releases, model updates across Hugging Face / ModelScope / Modelers, GitHub and GitCode activity, and deliver a daily digest via webhook or email.
 
 ## Bootstrap
 
@@ -53,6 +53,19 @@ sources:
     enabled: false
     organizations:
       - deepseek
+  modelscope:
+    enabled: false
+    organizations:
+      - Qwen
+  modelers:
+    enabled: false
+    organizations:
+      - MindSpore-Lab
+  gitcode:
+    enabled: false
+    token: your-gitcode-token  # requires org-read scope
+    organizations:
+      - gitcode
 ```
 
 ## Run the server
@@ -70,7 +83,7 @@ Key endpoints:
 | `POST` | `/jobs/run/{job_name}` | Trigger a job immediately |
 | `POST` | `/config/reload` | Hot-reload `config.yaml` without restart |
 
-Registered job names: `official_pages`, `github_burst`, `huggingface_models`, `daily_digest`.
+Registered job names: `official_pages`, `github_burst`, `huggingface_models`, `modelscope_models`, `modelers_models`, `gitcode_repos`, `daily_digest`.
 
 ## MVP paths
 
@@ -105,7 +118,35 @@ changes.
 curl -X POST http://localhost:8000/jobs/run/huggingface_models
 ```
 
-### 4 · Daily digest
+### 4 · ModelScope model monitoring
+
+Polls configured ModelScope organizations and emits one alert when a model is
+first seen, plus an update alert when the upstream `LastUpdatedTime` changes.
+
+```bash
+curl -X POST http://localhost:8000/jobs/run/modelscope_models
+```
+
+### 5 · Modelers model monitoring
+
+Polls configured Modelers organizations and emits one alert when a model is
+first seen, plus an update alert when the upstream `updated_at` changes.
+
+```bash
+curl -X POST http://localhost:8000/jobs/run/modelers_models
+```
+
+### 6 · GitCode repository monitoring
+
+Polls configured GitCode organizations through the authenticated API and emits
+one alert when a repository is first seen, plus an update alert when the
+upstream `updated_at` changes.
+
+```bash
+curl -X POST http://localhost:8000/jobs/run/gitcode_repos
+```
+
+### 7 · Daily digest
 
 Once per day the digest job ranks all stored alerts by score (descending) and
 dispatches a single summary payload to every enabled channel.
@@ -123,10 +164,16 @@ python3 -m radar.cli validate-config config/radar.yaml
 # Trigger a job from the CLI
 python3 -m radar.cli run-job github_burst --config config/radar.yaml
 python3 -m radar.cli run-job huggingface_models --config config/radar.yaml
+python3 -m radar.cli run-job modelscope_models --config config/radar.yaml
+python3 -m radar.cli run-job modelers_models --config config/radar.yaml
+python3 -m radar.cli run-job gitcode_repos --config config/radar.yaml
 
 # Backfill one source
 python3 -m radar.cli backfill-source github --config config/radar.yaml
 python3 -m radar.cli backfill-source huggingface --config config/radar.yaml
+python3 -m radar.cli backfill-source modelscope --config config/radar.yaml
+python3 -m radar.cli backfill-source modelers --config config/radar.yaml
+python3 -m radar.cli backfill-source gitcode --config config/radar.yaml
 
 # Send a test webhook
 python3 -m radar.cli send-test-notification webhook --config config/radar.yaml

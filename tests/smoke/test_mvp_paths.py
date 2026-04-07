@@ -5,8 +5,11 @@ from pydantic import HttpUrl
 
 from radar.core.config import OfficialPageEntry
 from radar.jobs.daily_digest import run_daily_digest_job
+from radar.jobs.gitcode_repos import run_gitcode_repos_job
 from radar.jobs.github_burst import run_github_burst_job
 from radar.jobs.huggingface_models import run_huggingface_models_job
+from radar.jobs.modelers_models import run_modelers_models_job
+from radar.jobs.modelscope_models import run_modelscope_models_job
 from radar.jobs.official_pages import run_official_pages_job
 
 
@@ -129,6 +132,72 @@ def test_huggingface_models_path_creates_alert(repo, alert_service) -> None:
 
 # ---------------------------------------------------------------------------
 # Path 4 – Daily digest
+# ---------------------------------------------------------------------------
+
+def test_modelscope_models_path_creates_alert(repo, alert_service) -> None:
+    item = {
+        "Id": 665336,
+        "Name": "Qwen3.5-397B-A17B",
+        "Path": "Qwen",
+        "CreatedTime": 1771213910,
+        "LastUpdatedTime": 1772414875,
+        "Downloads": 98560,
+    }
+
+    created = run_modelscope_models_job(
+        [item],
+        alert_service=alert_service,
+    )
+
+    assert created == 1
+    alerts = repo.list_alerts()
+    assert len(alerts) == 1
+    assert alerts[0].alert_type == "modelscope_model_new"
+
+
+def test_modelers_models_path_creates_alert(repo, alert_service) -> None:
+    item = {
+        "id": "80838",
+        "owner": "MindSpore-Lab",
+        "name": "Qwen3-VL-30B-A3B-Instruct",
+        "created_at": 1759655730,
+        "updated_at": 1759662143,
+        "download_count": 3791,
+        "visibility": "public",
+    }
+
+    created = run_modelers_models_job(
+        [item],
+        alert_service=alert_service,
+    )
+
+    assert created == 1
+    alerts = repo.list_alerts()
+    assert len(alerts) == 1
+    assert alerts[0].alert_type == "modelers_model_new"
+
+
+def test_gitcode_repos_path_creates_alert(repo, alert_service) -> None:
+    item = {
+        "full_name": "gitcode/example-repo",
+        "name": "example-repo",
+        "html_url": "https://gitcode.com/gitcode/example-repo",
+        "updated_at": "2026-04-07T00:00:00Z",
+    }
+
+    created = run_gitcode_repos_job(
+        [item],
+        alert_service=alert_service,
+    )
+
+    assert created == 1
+    alerts = repo.list_alerts()
+    assert len(alerts) == 1
+    assert alerts[0].alert_type == "gitcode_repository_new"
+
+
+# ---------------------------------------------------------------------------
+# Path 7 – Daily digest
 # ---------------------------------------------------------------------------
 
 def _seed_alert(repo, source: str, score: float, idx: int = 0):
