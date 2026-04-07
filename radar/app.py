@@ -139,14 +139,14 @@ def build_runtime(config_path: Path) -> RuntimeState:
             for organization in settings.sources.huggingface.organizations:
                 try:
                     items = huggingface_client.list_models_for_organization(organization)
+                    created += run_huggingface_models_job(
+                        items,
+                        repository=repo,
+                        alert_service=alert_service,
+                    )
                 except Exception as exc:
                     failures.append((organization, exc))
                     continue
-                created += run_huggingface_models_job(
-                    items,
-                    repository=repo,
-                    alert_service=alert_service,
-                )
             if failures:
                 failed_organizations = ", ".join(
                     f"{organization} ({exc})" for organization, exc in failures
@@ -167,15 +167,15 @@ def build_runtime(config_path: Path) -> RuntimeState:
             for organization in settings.sources.modelscope.organizations:
                 try:
                     items = modelscope_client.list_models_for_organization(organization)
+                    from radar.jobs.modelscope_models import run_modelscope_models_job
+
+                    created += run_modelscope_models_job(
+                        items,
+                        alert_service=alert_service,
+                    )
                 except Exception as exc:
                     failures.append((organization, exc))
                     continue
-                from radar.jobs.modelscope_models import run_modelscope_models_job
-
-                created += run_modelscope_models_job(
-                    items,
-                    alert_service=alert_service,
-                )
             if failures:
                 failed_organizations = ", ".join(
                     f"{organization} ({exc})" for organization, exc in failures
@@ -196,13 +196,13 @@ def build_runtime(config_path: Path) -> RuntimeState:
             for organization in settings.sources.modelers.organizations:
                 try:
                     items = modelers_client.list_models_for_organization(organization)
+                    created += run_modelers_models_job(
+                        items,
+                        alert_service=alert_service,
+                    )
                 except Exception as exc:
                     failures.append((organization, exc))
                     continue
-                created += run_modelers_models_job(
-                    items,
-                    alert_service=alert_service,
-                )
             if failures:
                 failed_organizations = ", ".join(
                     f"{organization} ({exc})" for organization, exc in failures
@@ -223,13 +223,13 @@ def build_runtime(config_path: Path) -> RuntimeState:
             for organization in settings.sources.gitcode.organizations:
                 try:
                     items = gitcode_client.list_repositories_for_organization(organization)
+                    created += run_gitcode_repos_job(
+                        items,
+                        alert_service=alert_service,
+                    )
                 except Exception as exc:
                     failures.append((organization, exc))
                     continue
-                created += run_gitcode_repos_job(
-                    items,
-                    alert_service=alert_service,
-                )
             if failures:
                 failed_organizations = ", ".join(
                     f"{organization} ({exc})" for organization, exc in failures
