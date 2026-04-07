@@ -166,7 +166,34 @@ sources:
     assert settings.sources.github.enabled is False
 
 
-def test_huggingface_enabled_requires_organizations(tmp_path: Path) -> None:
+def test_huggingface_enabled_without_organizations_raises(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: true
+""".strip()
+    )
+
+    with pytest.raises(ValueError, match="organizations"):
+        load_settings(config_path)
+
+
+def test_huggingface_enabled_with_empty_organizations_raises(tmp_path: Path) -> None:
     config_path = tmp_path / "radar.yaml"
     config_path.write_text(
         """
