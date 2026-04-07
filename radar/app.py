@@ -14,6 +14,7 @@ from radar.api.routes.alerts import router as alerts_router
 from radar.api.routes.config import router as config_router
 from radar.api.routes.health import router as health_router
 from radar.api.routes.jobs import router as jobs_router
+from radar.api.routes.ui import router as ui_router
 from radar.core.config import Settings, load_settings
 from radar.core.db import create_engine_and_session_factory, init_db
 from radar.core.repositories import RadarRepository
@@ -198,12 +199,21 @@ def shutdown_runtime(app: FastAPI) -> None:
         engine.dispose()
 
 
+from fastapi.staticfiles import StaticFiles
+
+
 def create_app(lifespan: Any = None) -> FastAPI:
     app = FastAPI(title="AI Infra Radar", lifespan=lifespan)
     app.include_router(health_router)
     app.include_router(alerts_router)
     app.include_router(jobs_router)
     app.include_router(config_router)
+    app.include_router(ui_router)
+    app.mount(
+        "/static/ui",
+        StaticFiles(directory=Path(__file__).resolve().parent / "ui"),
+        name="ui-static",
+    )
     # Initialise default state so routes never hit AttributeError
     app.state.engine = None
     app.state.repo = None
