@@ -47,6 +47,8 @@ sources:
           - update
   huggingface:
     enabled: false
+  modelers:
+    enabled: false
 """.strip()
     )
 
@@ -59,6 +61,7 @@ sources:
     page = settings.sources.official_pages.pages[0]
     assert str(page.url) == "https://api-docs.deepseek.com/"
     assert page.whitelist_keywords == ["release", "update"]
+    assert settings.sources.modelers.enabled is False
 
 
 def test_load_settings_reads_minimal_fixture() -> None:
@@ -153,6 +156,42 @@ def test_backfill_source_modelscope_runs_registered_job(
     assert result.exit_code == 0
     assert executed_jobs == ["modelscope_models"]
     assert "modelscope_models: executed" in result.output
+
+
+def test_backfill_source_modelers_runs_registered_job(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text((FIXTURES_DIR / "minimal.yaml").read_text())
+    executed_jobs: list[str] = []
+
+    class FakeScheduler:
+        def known_jobs(self) -> list[str]:
+            return ["modelers_models"]
+
+        def run(self, job_name: str) -> bool:
+            executed_jobs.append(job_name)
+            return True
+
+    class FakeEngine:
+        def dispose(self) -> None:
+            pass
+
+    class FakeRuntime:
+        scheduler = FakeScheduler()
+        engine = FakeEngine()
+
+    monkeypatch.setattr("radar.cli.build_runtime", lambda path: FakeRuntime())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["backfill-source", "modelers", "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0
+    assert executed_jobs == ["modelers_models"]
+    assert "modelers_models: executed" in result.output
 
 
 # --- TDD: unknown keys must be rejected ---
@@ -380,6 +419,70 @@ sources:
 
     settings = load_settings(config_path)
     assert settings.sources.modelscope.organizations == ["Qwen"]
+
+
+def test_modelers_enabled_without_organizations_raises(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+  modelscope:
+    enabled: false
+  modelers:
+    enabled: true
+""".strip()
+    )
+
+    with pytest.raises(ValidationError, match="organizations"):
+        load_settings(config_path)
+
+
+def test_modelers_enabled_accepts_organizations(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+  modelscope:
+    enabled: false
+  modelers:
+    enabled: true
+    organizations:
+      - MindSpore-Lab
+""".strip()
+    )
+
+    settings = load_settings(config_path)
+    assert settings.sources.modelers.organizations == ["MindSpore-Lab"]
 
 
 def test_official_pages_enabled_with_no_pages_raises(tmp_path: Path) -> None:

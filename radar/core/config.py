@@ -108,12 +108,25 @@ class ModelScopeSettings(BaseModel):
         return self
 
 
+class ModelersSettings(BaseModel):
+    model_config = _FORBID
+    enabled: bool
+    organizations: list[str] = []
+
+    @model_validator(mode="after")
+    def _require_orgs_when_enabled(self) -> "ModelersSettings":
+        if self.enabled and not self.organizations:
+            raise ValueError("organizations must contain at least one entry when modelers is enabled")
+        return self
+
+
 class SourceSettings(BaseModel):
     model_config = _FORBID
     github: GitHubSettings
     official_pages: OfficialPagesSettings
     huggingface: HuggingFaceSettings
     modelscope: ModelScopeSettings = ModelScopeSettings(enabled=False)
+    modelers: ModelersSettings = ModelersSettings(enabled=False)
 
 
 class Settings(BaseModel):

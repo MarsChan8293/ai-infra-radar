@@ -13,6 +13,7 @@ _SOURCE_TO_JOB = {
     "github": "github_burst",
     "huggingface": "huggingface_models",
     "modelscope": "modelscope_models",
+    "modelers": "modelers_models",
 }
 
 

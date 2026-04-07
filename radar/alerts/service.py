@@ -204,6 +204,60 @@ class AlertService:
             },
         )
 
+    def process_modelers_model(
+        self,
+        observation: dict,
+    ) -> int:
+        """Persist a Modelers model observation and emit new/update alerts."""
+        normalized = observation["normalized_payload"]
+        canonical_name = observation["canonical_name"]
+        existing_entity = self._repo.get_entity_by_canonical_name(canonical_name)
+        existing_observation = (
+            self._repo.get_latest_observation_for_entity(existing_entity.id, source="modelers")
+            if existing_entity is not None
+            else None
+        )
+        is_new = existing_entity is None
+
+        if existing_observation is not None:
+            previous_updated_at = existing_observation.normalized_payload["updated_at"]
+            if previous_updated_at == normalized["updated_at"]:
+                return 0
+
+        entity = self._repo.upsert_entity(
+            source="modelers",
+            entity_type="model",
+            canonical_name=canonical_name,
+            display_name=observation["display_name"],
+            url=observation["url"],
+        )
+        self._repo.record_observation(
+            entity_id=entity.id,
+            source="modelers",
+            raw_payload=observation["raw_payload"],
+            normalized_payload=normalized,
+            dedupe_key=observation["content_hash"],
+            content_hash=observation["content_hash"],
+        )
+
+        alert_type = "modelers_model_new" if is_new else "modelers_model_updated"
+        return self.emit_alert(
+            alert_type=alert_type,
+            entity_id=entity.id,
+            source="modelers",
+            score=1.0,
+            dedupe_key=f"modelers:{alert_type}:{normalized['model_id']}:{normalized['updated_at']}",
+            reason={
+                "model_id": normalized["model_id"],
+                "updated_at": normalized["updated_at"],
+            },
+            alert_payload={
+                "title": normalized["model_id"],
+                "url": observation["url"],
+                "score": 1.0,
+            },
+        )
+
     def process_huggingface_model(
         self,
         observation: dict,

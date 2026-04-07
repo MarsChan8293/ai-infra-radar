@@ -32,6 +32,7 @@ def _minimal_config(storage_path: str) -> dict:
             "official_pages": {"enabled": False},
             "huggingface": {"enabled": False},
             "modelscope": {"enabled": False},
+            "modelers": {"enabled": False},
         },
     }
 
@@ -113,6 +114,7 @@ def test_reload_rebuilds_runtime_with_new_jobs(tmp_path: Path) -> None:
                         },
                         "huggingface": {"enabled": False},
                         "modelscope": {"enabled": False},
+                        "modelers": {"enabled": False},
                     },
                 }
             )
@@ -161,6 +163,24 @@ def test_reload_registers_modelscope_job_when_enabled(tmp_path: Path) -> None:
         resp = client.post("/config/reload")
         assert resp.status_code == 200
         assert set(app.state.scheduler.known_jobs()) == {"daily_digest", "modelscope_models"}
+
+
+def test_reload_registers_modelers_job_when_enabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["modelers"] = {
+        "enabled": True,
+        "organizations": ["MindSpore-Lab"],
+    }
+    config_path.write_text(yaml.dump(config))
+
+    app = create_app()
+    app.state.config_path = config_path
+
+    with TestClient(app) as client:
+        resp = client.post("/config/reload")
+        assert resp.status_code == 200
+        assert set(app.state.scheduler.known_jobs()) == {"daily_digest", "modelers_models"}
 
 
 def test_huggingface_job_continues_after_organization_failure(
@@ -245,6 +265,50 @@ def test_modelscope_job_continues_after_organization_failure(
         alerts = runtime.repo.list_alerts()
         assert len(alerts) == 1
         assert alerts[0].alert_type == "modelscope_model_new"
+    finally:
+        runtime.engine.dispose()
+
+
+def test_modelers_job_continues_after_organization_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["modelers"] = {
+        "enabled": True,
+        "organizations": ["broken-org", "MindSpore-Lab"],
+    }
+    config_path.write_text(yaml.dump(config))
+
+    item = {
+        "id": "80838",
+        "owner": "MindSpore-Lab",
+        "name": "Qwen3-VL-30B-A3B-Instruct",
+        "created_at": 1759655730,
+        "updated_at": 1759662143,
+        "download_count": 3791,
+        "visibility": "public",
+    }
+
+    class FakeModelersClient:
+        def list_models_for_organization(self, organization: str) -> list[dict]:
+            if organization == "broken-org":
+                raise RuntimeError("boom")
+            if organization == "MindSpore-Lab":
+                return [item]
+            raise AssertionError(f"unexpected organization: {organization}")
+
+    monkeypatch.setattr("radar.app.ModelersClient", FakeModelersClient)
+
+    from radar.app import build_runtime
+
+    runtime = build_runtime(config_path)
+    try:
+        with pytest.raises(RuntimeError, match="broken-org"):
+            runtime.scheduler.run("modelers_models")
+        alerts = runtime.repo.list_alerts()
+        assert len(alerts) == 1
+        assert alerts[0].alert_type == "modelers_model_new"
     finally:
         runtime.engine.dispose()
 
