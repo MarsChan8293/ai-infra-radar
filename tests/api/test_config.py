@@ -33,6 +33,7 @@ def _minimal_config(storage_path: str) -> dict:
             "huggingface": {"enabled": False},
             "modelscope": {"enabled": False},
             "modelers": {"enabled": False},
+            "gitcode": {"enabled": False},
         },
     }
 
@@ -183,6 +184,25 @@ def test_reload_registers_modelers_job_when_enabled(tmp_path: Path) -> None:
         assert set(app.state.scheduler.known_jobs()) == {"daily_digest", "modelers_models"}
 
 
+def test_reload_registers_gitcode_job_when_enabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["gitcode"] = {
+        "enabled": True,
+        "token": "gitcode-token",
+        "organizations": ["gitcode"],
+    }
+    config_path.write_text(yaml.dump(config))
+
+    app = create_app()
+    app.state.config_path = config_path
+
+    with TestClient(app) as client:
+        resp = client.post("/config/reload")
+        assert resp.status_code == 200
+        assert set(app.state.scheduler.known_jobs()) == {"daily_digest", "gitcode_repos"}
+
+
 def test_huggingface_job_continues_after_organization_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -309,6 +329,51 @@ def test_modelers_job_continues_after_organization_failure(
         alerts = runtime.repo.list_alerts()
         assert len(alerts) == 1
         assert alerts[0].alert_type == "modelers_model_new"
+    finally:
+        runtime.engine.dispose()
+
+
+def test_gitcode_job_continues_after_organization_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["gitcode"] = {
+        "enabled": True,
+        "token": "gitcode-token",
+        "organizations": ["broken-org", "gitcode"],
+    }
+    config_path.write_text(yaml.dump(config))
+
+    item = {
+        "full_name": "gitcode/example-repo",
+        "name": "example-repo",
+        "html_url": "https://gitcode.com/gitcode/example-repo",
+        "updated_at": "2026-04-07T00:00:00Z",
+    }
+
+    class FakeGitCodeClient:
+        def __init__(self, token: str) -> None:
+            assert token == "gitcode-token"
+
+        def list_repositories_for_organization(self, organization: str) -> list[dict]:
+            if organization == "broken-org":
+                raise RuntimeError("boom")
+            if organization == "gitcode":
+                return [item]
+            raise AssertionError(f"unexpected organization: {organization}")
+
+    monkeypatch.setattr("radar.app.GitCodeClient", FakeGitCodeClient)
+
+    from radar.app import build_runtime
+
+    runtime = build_runtime(config_path)
+    try:
+        with pytest.raises(RuntimeError, match="broken-org"):
+            runtime.scheduler.run("gitcode_repos")
+        alerts = runtime.repo.list_alerts()
+        assert len(alerts) == 1
+        assert alerts[0].alert_type == "gitcode_repository_new"
     finally:
         runtime.engine.dispose()
 

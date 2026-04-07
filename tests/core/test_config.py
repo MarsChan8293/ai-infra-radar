@@ -49,6 +49,8 @@ sources:
     enabled: false
   modelers:
     enabled: false
+  gitcode:
+    enabled: false
 """.strip()
     )
 
@@ -62,6 +64,7 @@ sources:
     assert str(page.url) == "https://api-docs.deepseek.com/"
     assert page.whitelist_keywords == ["release", "update"]
     assert settings.sources.modelers.enabled is False
+    assert settings.sources.gitcode.enabled is False
 
 
 def test_load_settings_reads_minimal_fixture() -> None:
@@ -192,6 +195,42 @@ def test_backfill_source_modelers_runs_registered_job(
     assert result.exit_code == 0
     assert executed_jobs == ["modelers_models"]
     assert "modelers_models: executed" in result.output
+
+
+def test_backfill_source_gitcode_runs_registered_job(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text((FIXTURES_DIR / "minimal.yaml").read_text())
+    executed_jobs: list[str] = []
+
+    class FakeScheduler:
+        def known_jobs(self) -> list[str]:
+            return ["gitcode_repos"]
+
+        def run(self, job_name: str) -> bool:
+            executed_jobs.append(job_name)
+            return True
+
+    class FakeEngine:
+        def dispose(self) -> None:
+            pass
+
+    class FakeRuntime:
+        scheduler = FakeScheduler()
+        engine = FakeEngine()
+
+    monkeypatch.setattr("radar.cli.build_runtime", lambda path: FakeRuntime())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["backfill-source", "gitcode", "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0
+    assert executed_jobs == ["gitcode_repos"]
+    assert "gitcode_repos: executed" in result.output
 
 
 # --- TDD: unknown keys must be rejected ---
@@ -483,6 +522,112 @@ sources:
 
     settings = load_settings(config_path)
     assert settings.sources.modelers.organizations == ["MindSpore-Lab"]
+
+
+def test_gitcode_enabled_without_token_raises(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+  modelscope:
+    enabled: false
+  modelers:
+    enabled: false
+  gitcode:
+    enabled: true
+    organizations:
+      - gitcode
+""".strip()
+    )
+
+    with pytest.raises(ValidationError, match="token"):
+        load_settings(config_path)
+
+
+def test_gitcode_enabled_without_organizations_raises(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+  modelscope:
+    enabled: false
+  modelers:
+    enabled: false
+  gitcode:
+    enabled: true
+    token: gitcode-token
+""".strip()
+    )
+
+    with pytest.raises(ValidationError, match="organizations"):
+        load_settings(config_path)
+
+
+def test_gitcode_enabled_accepts_token_and_organizations(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+  modelscope:
+    enabled: false
+  modelers:
+    enabled: false
+  gitcode:
+    enabled: true
+    token: gitcode-token
+    organizations:
+      - gitcode
+""".strip()
+    )
+
+    settings = load_settings(config_path)
+    assert settings.sources.gitcode.token == "gitcode-token"
+    assert settings.sources.gitcode.organizations == ["gitcode"]
 
 
 def test_official_pages_enabled_with_no_pages_raises(tmp_path: Path) -> None:

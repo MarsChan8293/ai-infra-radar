@@ -120,6 +120,21 @@ class ModelersSettings(BaseModel):
         return self
 
 
+class GitCodeSettings(BaseModel):
+    model_config = _FORBID
+    enabled: bool
+    token: str | None = None
+    organizations: list[str] = []
+
+    @model_validator(mode="after")
+    def _require_token_and_orgs_when_enabled(self) -> "GitCodeSettings":
+        if self.enabled and not self.token:
+            raise ValueError("token is required when gitcode is enabled")
+        if self.enabled and not self.organizations:
+            raise ValueError("organizations must contain at least one entry when gitcode is enabled")
+        return self
+
+
 class SourceSettings(BaseModel):
     model_config = _FORBID
     github: GitHubSettings
@@ -127,6 +142,7 @@ class SourceSettings(BaseModel):
     huggingface: HuggingFaceSettings
     modelscope: ModelScopeSettings = ModelScopeSettings(enabled=False)
     modelers: ModelersSettings = ModelersSettings(enabled=False)
+    gitcode: GitCodeSettings = GitCodeSettings(enabled=False)
 
 
 class Settings(BaseModel):

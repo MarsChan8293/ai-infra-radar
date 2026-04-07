@@ -14,6 +14,7 @@ _SOURCE_TO_JOB = {
     "huggingface": "huggingface_models",
     "modelscope": "modelscope_models",
     "modelers": "modelers_models",
+    "gitcode": "gitcode_repos",
 }
 
 

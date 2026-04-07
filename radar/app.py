@@ -21,11 +21,13 @@ from radar.core.db import create_engine_and_session_factory, init_db
 from radar.core.repositories import RadarRepository
 from radar.core.scheduler import RadarScheduler
 from radar.jobs.daily_digest import run_daily_digest_job
+from radar.jobs.gitcode_repos import run_gitcode_repos_job
 from radar.jobs.github_burst import run_github_burst_job
 from radar.jobs.huggingface_models import run_huggingface_models_job
 from radar.jobs.modelers_models import run_modelers_models_job
 from radar.jobs.official_pages import run_official_pages_job
 from radar.sources.github.client import GitHubClient
+from radar.sources.gitcode.client import GitCodeClient
 from radar.sources.huggingface.client import HuggingFaceClient
 from radar.sources.modelers.client import ModelersClient
 from radar.sources.modelscope.client import ModelScopeClient
@@ -44,6 +46,7 @@ class RuntimeState:
     huggingface_client: Any
     modelscope_client: Any
     modelers_client: Any
+    gitcode_client: Any
 
 
 def _build_channels(settings: Settings) -> dict[str, Any]:
@@ -95,6 +98,7 @@ def build_runtime(config_path: Path) -> RuntimeState:
     huggingface_client = HuggingFaceClient()
     modelscope_client = ModelScopeClient()
     modelers_client = ModelersClient()
+    gitcode_client = GitCodeClient(settings.sources.gitcode.token or "")
     scheduler = RadarScheduler(timezone=settings.app.timezone)
 
     if settings.sources.official_pages.enabled:
@@ -211,6 +215,33 @@ def build_runtime(config_path: Path) -> RuntimeState:
 
         scheduler.register("modelers_models", _run_modelers_models, minutes=30)
 
+    if settings.sources.gitcode.enabled:
+
+        def _run_gitcode_repos() -> int:
+            created = 0
+            failures: list[tuple[str, Exception]] = []
+            for organization in settings.sources.gitcode.organizations:
+                try:
+                    items = gitcode_client.list_repositories_for_organization(organization)
+                except Exception as exc:
+                    failures.append((organization, exc))
+                    continue
+                created += run_gitcode_repos_job(
+                    items,
+                    alert_service=alert_service,
+                )
+            if failures:
+                failed_organizations = ", ".join(
+                    f"{organization} ({exc})" for organization, exc in failures
+                )
+                raise RuntimeError(
+                    "gitcode_repos failed for organizations: "
+                    f"{failed_organizations}"
+                )
+            return created
+
+        scheduler.register("gitcode_repos", _run_gitcode_repos, minutes=30)
+
     daily_digest_channels = _build_channels(settings)
 
     def _dispatch_daily_digest(payload: dict) -> None:
@@ -236,6 +267,7 @@ def build_runtime(config_path: Path) -> RuntimeState:
         huggingface_client=huggingface_client,
         modelscope_client=modelscope_client,
         modelers_client=modelers_client,
+        gitcode_client=gitcode_client,
     )
 
 
@@ -258,6 +290,7 @@ def apply_runtime(app: FastAPI, runtime: RuntimeState) -> None:
     app.state.huggingface_client = runtime.huggingface_client
     app.state.modelscope_client = runtime.modelscope_client
     app.state.modelers_client = runtime.modelers_client
+    app.state.gitcode_client = runtime.gitcode_client
     runtime.scheduler.start()
 
 
@@ -292,4 +325,5 @@ def create_app(lifespan: Any = None) -> FastAPI:
     app.state.huggingface_client = None
     app.state.modelscope_client = None
     app.state.modelers_client = None
+    app.state.gitcode_client = None
     return app

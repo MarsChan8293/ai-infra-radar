@@ -35,3 +35,5 @@ sources:
     enabled: false
   modelers:
     enabled: false
+  gitcode:
+    enabled: false

@@ -258,6 +258,60 @@ class AlertService:
             },
         )
 
+    def process_gitcode_repository(
+        self,
+        observation: dict,
+    ) -> int:
+        """Persist a GitCode repository observation and emit new/update alerts."""
+        normalized = observation["normalized_payload"]
+        canonical_name = observation["canonical_name"]
+        existing_entity = self._repo.get_entity_by_canonical_name(canonical_name)
+        existing_observation = (
+            self._repo.get_latest_observation_for_entity(existing_entity.id, source="gitcode")
+            if existing_entity is not None
+            else None
+        )
+        is_new = existing_entity is None
+
+        if existing_observation is not None:
+            previous_updated_at = existing_observation.normalized_payload["updated_at"]
+            if previous_updated_at == normalized["updated_at"]:
+                return 0
+
+        entity = self._repo.upsert_entity(
+            source="gitcode",
+            entity_type="repository",
+            canonical_name=canonical_name,
+            display_name=observation["display_name"],
+            url=observation["url"],
+        )
+        self._repo.record_observation(
+            entity_id=entity.id,
+            source="gitcode",
+            raw_payload=observation["raw_payload"],
+            normalized_payload=normalized,
+            dedupe_key=observation["content_hash"],
+            content_hash=observation["content_hash"],
+        )
+
+        alert_type = "gitcode_repository_new" if is_new else "gitcode_repository_updated"
+        return self.emit_alert(
+            alert_type=alert_type,
+            entity_id=entity.id,
+            source="gitcode",
+            score=1.0,
+            dedupe_key=f"gitcode:{alert_type}:{normalized['full_name']}:{normalized['updated_at']}",
+            reason={
+                "full_name": normalized["full_name"],
+                "updated_at": normalized["updated_at"],
+            },
+            alert_payload={
+                "title": normalized["full_name"],
+                "url": observation["url"],
+                "score": 1.0,
+            },
+        )
+
     def process_huggingface_model(
         self,
         observation: dict,
