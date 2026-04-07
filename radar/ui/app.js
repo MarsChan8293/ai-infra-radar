@@ -22,6 +22,11 @@ function renderAlertDetail(alert) {
     `Reason: ${JSON.stringify(alert.reason)}`;
 }
 
+function resetAlertDetail() {
+  const detail = document.getElementById("alert-detail");
+  detail.textContent = "Select an alert to inspect its details.";
+}
+
 async function loadAlertDetail(alertId) {
   const status = document.getElementById("alerts-status");
   status.textContent = `Loading alert ${alertId}...`;
@@ -39,6 +44,7 @@ async function loadAlerts() {
   const list = document.getElementById("alerts-list");
   status.textContent = "Loading alerts...";
   list.innerHTML = "";
+  resetAlertDetail();
   try {
     const payload = await fetchJson("/alerts");
     for (const alert of payload.alerts) {
@@ -53,6 +59,32 @@ async function loadAlerts() {
     status.textContent = `Loaded ${payload.alerts.length} alerts`;
   } catch (error) {
     status.textContent = `Failed to load alerts: ${error.message}`;
+  }
+}
+
+function renderJobs(jobs) {
+  const list = document.getElementById("jobs-list");
+  list.innerHTML = "";
+  for (const jobName of jobs) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.job = jobName;
+    button.textContent = `Run ${jobName}`;
+    button.addEventListener("click", () => triggerJob(jobName));
+    list.appendChild(button);
+  }
+}
+
+async function loadJobs() {
+  const status = document.getElementById("jobs-status");
+  status.textContent = "Loading jobs...";
+  try {
+    const payload = await fetchJson("/jobs");
+    renderJobs(payload.jobs);
+    status.textContent = `Loaded ${payload.jobs.length} jobs`;
+  } catch (error) {
+    renderJobs([]);
+    status.textContent = `Failed to load jobs: ${error.message}`;
   }
 }
 
@@ -75,20 +107,19 @@ async function reloadConfig() {
     const payload = await fetchJson("/config/reload", { method: "POST" });
     status.textContent = payload.status;
     result.textContent = JSON.stringify(payload, null, 2);
+    renderJobs(payload.jobs);
+    document.getElementById("jobs-status").textContent = `Loaded ${payload.jobs.length} jobs`;
   } catch (error) {
     status.textContent = `Config reload failed: ${error.message}`;
+    result.textContent = "Config reload failed.";
   }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("refresh-alerts").addEventListener("click", loadAlerts);
-  document
-    .querySelectorAll("[data-job]")
-    .forEach((button) =>
-      button.addEventListener("click", () => triggerJob(button.dataset.job)),
-    );
   document.getElementById("reload-config").addEventListener("click", reloadConfig);
   loadAlerts();
+  loadJobs();
 });
 
-window.radarUi = { fetchJson, loadAlerts, loadAlertDetail, triggerJob, reloadConfig };
+window.radarUi = { fetchJson, loadAlerts, loadAlertDetail, loadJobs, renderJobs, triggerJob, reloadConfig };

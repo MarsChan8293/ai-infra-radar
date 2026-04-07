@@ -51,6 +51,13 @@ def test_trigger_official_pages_returns_202() -> None:
     assert "official_pages" in scheduler.triggered
 
 
+def test_list_jobs_returns_known_jobs() -> None:
+    client, _ = _make_client(_MockScheduler({"daily_digest", "github_burst"}))
+    resp = client.get("/jobs")
+    assert resp.status_code == 200
+    assert sorted(resp.json()["jobs"]) == ["daily_digest", "github_burst"]
+
+
 def test_trigger_unknown_job_returns_404() -> None:
     client, _ = _make_client()
     resp = client.post("/jobs/run/nonexistent_job")
@@ -68,3 +75,15 @@ def test_trigger_job_no_scheduler_returns_404() -> None:
     client = TestClient(app)
     resp = client.post("/jobs/run/github_burst")
     assert resp.status_code == 404
+
+
+def test_list_jobs_no_scheduler_returns_empty_list() -> None:
+    app = create_app()
+    app.state.repo = None
+    app.state.scheduler = None
+    app.state.settings = None
+    app.state.config_path = None
+    client = TestClient(app)
+    resp = client.get("/jobs")
+    assert resp.status_code == 200
+    assert resp.json() == {"jobs": []}

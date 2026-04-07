@@ -6,6 +6,15 @@ from fastapi import APIRouter, HTTPException, Request
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
+@router.get("")
+def list_jobs(request: Request) -> dict:
+    """Return currently registered job names."""
+    scheduler = request.app.state.scheduler
+    if scheduler is None:
+        return {"jobs": []}
+    return {"jobs": scheduler.known_jobs()}
+
+
 @router.post("/run/{job_name}", status_code=202)
 def trigger_job(job_name: str, request: Request) -> dict:
     """Trigger a named job immediately.

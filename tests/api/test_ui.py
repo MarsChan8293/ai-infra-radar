@@ -54,10 +54,8 @@ def test_ui_shell_contains_job_controls() -> None:
     response = client.get("/ui")
 
     assert response.status_code == 200
-    assert 'data-job="official_pages"' in response.text
-    assert 'data-job="github_burst"' in response.text
-    assert 'data-job="huggingface_models"' in response.text
-    assert 'data-job="daily_digest"' in response.text
+    assert 'id="jobs-list"' in response.text
+    assert 'id="jobs-status"' in response.text
 
 
 def test_ui_shell_contains_runtime_controls() -> None:
@@ -77,8 +75,20 @@ def test_ui_script_contains_jobs_and_reload_api_wiring() -> None:
     response = client.get("/static/ui/app.js")
 
     assert response.status_code == 200
+    assert 'fetchJson("/jobs")' in response.text
     assert 'fetchJson(`/jobs/run/${jobName}`' in response.text
     assert 'fetchJson("/config/reload"' in response.text
+    assert "renderJobs" in response.text
+
+
+def test_ui_script_clears_stale_ui_state() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/static/ui/app.js")
+
+    assert response.status_code == 200
+    assert 'detail.textContent = "Select an alert to inspect its details."' in response.text
+    assert 'result.textContent = "Config reload failed."' in response.text
 
 
 def test_readme_mentions_ui_entrypoint() -> None:
