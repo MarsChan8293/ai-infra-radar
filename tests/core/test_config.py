@@ -119,6 +119,42 @@ def test_backfill_source_huggingface_runs_registered_job(
     assert "huggingface_models: executed" in result.output
 
 
+def test_backfill_source_modelscope_runs_registered_job(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text((FIXTURES_DIR / "minimal.yaml").read_text())
+    executed_jobs: list[str] = []
+
+    class FakeScheduler:
+        def known_jobs(self) -> list[str]:
+            return ["modelscope_models"]
+
+        def run(self, job_name: str) -> bool:
+            executed_jobs.append(job_name)
+            return True
+
+    class FakeEngine:
+        def dispose(self) -> None:
+            pass
+
+    class FakeRuntime:
+        scheduler = FakeScheduler()
+        engine = FakeEngine()
+
+    monkeypatch.setattr("radar.cli.build_runtime", lambda path: FakeRuntime())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["backfill-source", "modelscope", "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0
+    assert executed_jobs == ["modelscope_models"]
+    assert "modelscope_models: executed" in result.output
+
+
 # --- TDD: unknown keys must be rejected ---
 
 def test_unknown_top_level_key_raises(tmp_path: Path) -> None:
@@ -284,6 +320,66 @@ sources:
 
     settings = load_settings(config_path)
     assert settings.sources.huggingface.organizations == ["deepseek"]
+
+
+def test_modelscope_enabled_without_organizations_raises(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+  modelscope:
+    enabled: true
+""".strip()
+    )
+
+    with pytest.raises(ValidationError, match="organizations"):
+        load_settings(config_path)
+
+
+def test_modelscope_enabled_accepts_organizations(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+  modelscope:
+    enabled: true
+    organizations:
+      - Qwen
+""".strip()
+    )
+
+    settings = load_settings(config_path)
+    assert settings.sources.modelscope.organizations == ["Qwen"]
 
 
 def test_official_pages_enabled_with_no_pages_raises(tmp_path: Path) -> None:

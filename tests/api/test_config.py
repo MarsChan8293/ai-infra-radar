@@ -145,6 +145,24 @@ def test_reload_registers_huggingface_job_when_enabled(tmp_path: Path) -> None:
         assert set(app.state.scheduler.known_jobs()) == {"daily_digest", "huggingface_models"}
 
 
+def test_reload_registers_modelscope_job_when_enabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["modelscope"] = {
+        "enabled": True,
+        "organizations": ["Qwen"],
+    }
+    config_path.write_text(yaml.dump(config))
+
+    app = create_app()
+    app.state.config_path = config_path
+
+    with TestClient(app) as client:
+        resp = client.post("/config/reload")
+        assert resp.status_code == 200
+        assert set(app.state.scheduler.known_jobs()) == {"daily_digest", "modelscope_models"}
+
+
 def test_huggingface_job_continues_after_organization_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -154,7 +172,7 @@ def test_huggingface_job_continues_after_organization_failure(
         "enabled": True,
         "organizations": ["broken-org", "deepseek"],
     }
-    config["sources"]["modelscope"] = {"enabled": True, "organizations": ["broken-org", "deepseek"]}
+    config["sources"]["modelscope"] = {"enabled": False}
     config_path.write_text(yaml.dump(config))
 
     item = {
@@ -184,6 +202,49 @@ def test_huggingface_job_continues_after_organization_failure(
         alerts = runtime.repo.list_alerts()
         assert len(alerts) == 1
         assert alerts[0].alert_type == "huggingface_model_new"
+    finally:
+        runtime.engine.dispose()
+
+
+def test_modelscope_job_continues_after_organization_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["modelscope"] = {
+        "enabled": True,
+        "organizations": ["broken-org", "Qwen"],
+    }
+    config_path.write_text(yaml.dump(config))
+
+    item = {
+        "Id": 665336,
+        "Name": "Qwen3.5-397B-A17B",
+        "Path": "Qwen",
+        "CreatedTime": 1771213910,
+        "LastUpdatedTime": 1772414875,
+        "Downloads": 98560,
+    }
+
+    class FakeModelScopeClient:
+        def list_models_for_organization(self, organization: str) -> list[dict]:
+            if organization == "broken-org":
+                raise RuntimeError("boom")
+            if organization == "Qwen":
+                return [item]
+            raise AssertionError(f"unexpected organization: {organization}")
+
+    monkeypatch.setattr("radar.app.ModelScopeClient", FakeModelScopeClient)
+
+    from radar.app import build_runtime
+
+    runtime = build_runtime(config_path)
+    try:
+        with pytest.raises(RuntimeError, match="broken-org"):
+            runtime.scheduler.run("modelscope_models")
+        alerts = runtime.repo.list_alerts()
+        assert len(alerts) == 1
+        assert alerts[0].alert_type == "modelscope_model_new"
     finally:
         runtime.engine.dispose()
 
