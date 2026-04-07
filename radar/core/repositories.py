@@ -84,7 +84,7 @@ class RadarRepository:
             return session.scalar(
                 select(Observation)
                 .where(Observation.entity_id == entity_id, Observation.source == source)
-                .order_by(Observation.id.desc())
+                .order_by(Observation.observed_at.desc(), Observation.id.desc())
             )
 
     def create_alert(
