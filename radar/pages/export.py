@@ -12,6 +12,10 @@ def _build_static_index() -> str:
     html = (_RESULTS_UI_DIR / "index.html").read_text()
     html = html.replace('href="/static/results/styles.css"', 'href="./styles.css"')
     html = html.replace(
+        '<a class="ops-link" href="/ops">Open operations console</a>',
+        '<span class="ops-link">GitHub Pages archive</span>',
+    )
+    html = html.replace(
         '<script src="/static/results/app.js" defer></script>',
         """<script>
       window.__RADAR_RESULTS_CONFIG__ = {
