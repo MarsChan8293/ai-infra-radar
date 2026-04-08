@@ -40,6 +40,7 @@ def test_export_pages_writes_static_shell_manifest_and_daily_json(
     assert "window.__RADAR_RESULTS_CONFIG__" in index_html
     assert "./manifest.json" in index_html
     assert "./reports" in index_html
+    assert 'href="/ops"' not in index_html
 
     app_js = (tmp_path / "app.js").read_text()
     assert "manifestPath" in app_js
@@ -167,5 +168,8 @@ def test_pages_workflow_exists_and_supports_auto_and_manual_publish() -> None:
     content = workflow.read_text()
     assert "workflow_dispatch:" in content
     assert "schedule:" in content
+    assert "concurrency:" in content
+    assert "ref:" in content
     assert "actions/deploy-pages" in content
     assert "export-pages" in content
+    assert "git push origin HEAD:" in content
