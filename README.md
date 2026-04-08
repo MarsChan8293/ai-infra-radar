@@ -79,13 +79,15 @@ Key endpoints:
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Liveness check |
+| `GET` | `/` | Radar results homepage |
 | `GET` | `/alerts` | List persisted alerts |
+| `GET` | `/ops` | Operations console |
 | `POST` | `/jobs/run/{job_name}` | Trigger a job immediately |
 | `POST` | `/config/reload` | Hot-reload `config.yaml` without restart |
 
 Registered job names: `official_pages`, `github_burst`, `huggingface_models`, `modelscope_models`, `modelers_models`, `gitcode_repos`, `daily_digest`.
 
-## Operations UI
+## Web UI
 
 Start the server with a valid config:
 
@@ -96,10 +98,22 @@ RADAR_CONFIG=config/radar.yaml uvicorn radar.main:app --reload
 Then visit:
 
 ```text
-http://127.0.0.1:8000/ui
+http://127.0.0.1:8000/
 ```
 
-The current UI includes:
+The default homepage is the radar results browser:
+
+- date-first browsing of grouped report data
+- source/topic filtering inside the selected day
+- report summary plus event list
+
+The operations console is available at:
+
+```text
+http://127.0.0.1:8000/ops
+```
+
+The operations console includes:
 
 - alert list and detail inspection
 - manual job trigger buttons

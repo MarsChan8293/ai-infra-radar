@@ -175,6 +175,49 @@ class RadarRepository:
         with self._session_factory() as session:
             return session.scalar(select(Alert).where(Alert.id == alert_id))
 
+    def list_report_days(self) -> list[str]:
+        with self._session_factory() as session:
+            created_at_rows = session.execute(
+                select(Alert.created_at).order_by(Alert.created_at.desc(), Alert.id.desc())
+            )
+            seen_days: set[str] = set()
+            ordered_days: list[str] = []
+            for created_at, in created_at_rows:
+                day = created_at.date().isoformat()
+                if day in seen_days:
+                    continue
+                seen_days.add(day)
+                ordered_days.append(day)
+            return ordered_days
+
+    def list_alerts_for_day(self, day: str) -> list[dict]:
+        start = datetime.fromisoformat(f"{day}T00:00:00+00:00")
+        end = start + timedelta(days=1)
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(Alert, Entity)
+                .join(Entity, Entity.id == Alert.entity_id)
+                .where(Alert.created_at >= start, Alert.created_at < end)
+                .order_by(Alert.score.desc(), Alert.created_at.desc(), Alert.id.desc())
+            )
+            return [
+                {
+                    "id": alert.id,
+                    "alert_type": alert.alert_type,
+                    "entity_id": alert.entity_id,
+                    "source": alert.source,
+                    "score": alert.score,
+                    "dedupe_key": alert.dedupe_key,
+                    "reason": alert.reason,
+                    "created_at": alert.created_at.isoformat(),
+                    "status": alert.status,
+                    "display_name": entity.display_name,
+                    "canonical_name": entity.canonical_name,
+                    "url": entity.url,
+                }
+                for alert, entity in rows
+            ]
+
     def get_digest_candidates(self, *, limit: int = 50, window_hours: int = 24) -> list[Alert]:
         """Return recent alerts ranked by score descending, up to *limit* rows."""
         cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)

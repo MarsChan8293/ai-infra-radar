@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Infra Radar</title>
+    <link rel="stylesheet" href="/static/results/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Radar Results</p>
+          <h1>AI Infra Radar</h1>
+          <p id="report-subtitle">
+            Browse monitoring results by day, then narrow by source.
+          </p>
+        </div>
+        <a class="ops-link" href="/ops">Open operations console</a>
+      </header>
+      <main class="layout">
+        <aside class="sidebar">
+          <section class="sidebar-panel">
+            <div class="panel-header">
+              <h2>Dates</h2>
+              <span id="report-status" class="status-line">Loading reports...</span>
+            </div>
+            <ul id="date-list" class="nav-list"></ul>
+          </section>
+          <section class="sidebar-panel">
+            <div class="panel-header">
+              <h2>Topics</h2>
+            </div>
+            <ul id="topic-list" class="nav-list"></ul>
+          </section>
+        </aside>
+        <section class="content">
+          <article id="report-summary" class="summary-card">
+            Select a day to inspect its report summary.
+          </article>
+          <section id="report-events" class="events-list"></section>
+        </section>
+      </main>
+    </div>
+    <script src="/static/results/app.js" defer></script>
+  </body>
+</html>

@@ -14,7 +14,9 @@ from radar.alerts.webhook import send_webhook
 from radar.api.routes.alerts import router as alerts_router
 from radar.api.routes.config import router as config_router
 from radar.api.routes.health import router as health_router
+from radar.api.routes.home import router as home_router
 from radar.api.routes.jobs import router as jobs_router
+from radar.api.routes.reports import router as reports_router
 from radar.api.routes.ui import router as ui_router
 from radar.core.config import Settings, load_settings
 from radar.core.db import create_engine_and_session_factory, init_db
@@ -304,15 +306,22 @@ def shutdown_runtime(app: FastAPI) -> None:
 
 def create_app(lifespan: Any = None) -> FastAPI:
     app = FastAPI(title="AI Infra Radar", lifespan=lifespan)
+    app.include_router(home_router)
     app.include_router(health_router)
     app.include_router(alerts_router)
     app.include_router(jobs_router)
     app.include_router(config_router)
+    app.include_router(reports_router)
     app.include_router(ui_router)
     app.mount(
-        "/static/ui",
+        "/static/results",
+        StaticFiles(directory=Path(__file__).resolve().parent / "ui" / "results"),
+        name="results-static",
+    )
+    app.mount(
+        "/static/ops",
         StaticFiles(directory=Path(__file__).resolve().parent / "ui"),
-        name="ui-static",
+        name="ops-static",
     )
     # Initialise default state so routes never hit AttributeError
     app.state.engine = None
