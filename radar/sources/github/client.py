@@ -1,9 +1,30 @@
 """HTTP client for the GitHub repository search API."""
 from __future__ import annotations
 
+import re
+from datetime import date, timedelta
+
 import httpx
 
 _DEFAULT_PER_PAGE = 30
+_TODAY_TOKEN_RE = re.compile(r"@today(?:(?P<sign>[+-])(?P<days>\d+)d)?")
+
+
+def expand_query_date_placeholders(query: str, *, today: date | None = None) -> str:
+    base_day = today or date.today()
+
+    def _replace(match: re.Match[str]) -> str:
+        sign = match.group("sign")
+        days = match.group("days")
+        if sign is None or days is None:
+            return base_day.isoformat()
+
+        delta_days = int(days)
+        offset = timedelta(days=delta_days)
+        resolved = base_day - offset if sign == "-" else base_day + offset
+        return resolved.isoformat()
+
+    return _TODAY_TOKEN_RE.sub(_replace, query)
 
 
 class GitHubClient:

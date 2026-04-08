@@ -172,11 +172,11 @@ sources:
     enabled: true
     token: ghp_example
     queries:
-      - speculative decoding
-      - kv cache
-      - prefix caching
-      - continuous batching
-      - paged attention
+      - '"speculative decoding" created:>@today-7d'
+      - '"kv cache" inference created:>@today-7d'
+      - '"prefix caching" llm created:>@today-7d'
+      - '"continuous batching" llm created:>@today-7d'
+      - '"paged attention" created:>@today-7d'
     burst_threshold: 0.25
     readme_filter:
       enabled: true
@@ -189,6 +189,10 @@ sources:
 
 Filtering is case-insensitive. Repositories without a matching README are
 excluded from the GitHub alert path.
+
+GitHub itself only accepts absolute dates, but AI Infra Radar supports the
+relative placeholders `@today`, `@today-7d`, and `@today+3d` inside GitHub
+queries and resolves them to `YYYY-MM-DD` before calling the GitHub API.
 
 ```bash
 curl -X POST http://localhost:8000/jobs/run/github_burst

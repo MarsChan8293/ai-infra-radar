@@ -263,6 +263,42 @@ def test_github_job_filters_repositories_by_readme_keywords(
         runtime.engine.dispose()
 
 
+def test_github_job_expands_relative_date_placeholders(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["github"] = {
+        "enabled": True,
+        "token": "ghp_example",
+        "queries": ['created:>@today-7d "kv cache"'],
+        "burst_threshold": 1.1,
+    }
+    config_path.write_text(yaml.dump(config))
+    captured_queries: list[str] = []
+
+    class FakeGitHubClient:
+        def __init__(self, token: str | None = None) -> None:
+            self.token = token
+
+        def search_repositories(self, query: str) -> list[dict]:
+            captured_queries.append(query)
+            return []
+
+    monkeypatch.setattr("radar.app.GitHubClient", FakeGitHubClient)
+
+    from radar.app import build_runtime
+
+    runtime = build_runtime(config_path)
+    try:
+        runtime.scheduler.run("github_burst")
+        assert len(captured_queries) == 1
+        assert captured_queries[0].startswith("created:>20")
+        assert "@today" not in captured_queries[0]
+    finally:
+        runtime.engine.dispose()
+
+
 def test_huggingface_job_continues_after_organization_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

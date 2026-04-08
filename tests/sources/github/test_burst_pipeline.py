@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from datetime import date
 
 import httpx
 import pytest
@@ -258,6 +259,24 @@ def test_github_client_missing_readme_returns_none() -> None:
     )
 
     assert GitHubClient().fetch_readme_text("example-org/no-readme") is None
+
+
+def test_expand_query_date_placeholders_resolves_today_minus_days() -> None:
+    from radar.sources.github.client import expand_query_date_placeholders
+
+    query = 'created:>@today-7d "speculative decoding"'
+
+    expanded = expand_query_date_placeholders(query, today=date(2026, 4, 8))
+
+    assert expanded == 'created:>2026-04-01 "speculative decoding"'
+
+
+def test_expand_query_date_placeholders_resolves_today_literal() -> None:
+    from radar.sources.github.client import expand_query_date_placeholders
+
+    expanded = expand_query_date_placeholders("pushed:>=@today", today=date(2026, 4, 8))
+
+    assert expanded == "pushed:>=2026-04-08"
 
 
 # ---------------------------------------------------------------------------

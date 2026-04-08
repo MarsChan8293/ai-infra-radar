@@ -31,6 +31,7 @@ from radar.jobs.official_pages import run_official_pages_job
 from radar.sources.github.client import GitHubClient
 from radar.sources.gitcode.client import GitCodeClient
 from radar.sources.huggingface.client import HuggingFaceClient
+from radar.sources.github.client import expand_query_date_placeholders
 from radar.sources.github.pipeline import readme_matches_keywords
 from radar.sources.modelers.client import ModelersClient
 from radar.sources.modelscope.client import ModelScopeClient
@@ -124,7 +125,11 @@ def build_runtime(config_path: Path) -> RuntimeState:
         def _run_github_burst() -> int:
             search_items: list[dict] = []
             for query in settings.sources.github.queries:
-                search_items.extend(github_client.search_repositories(query))
+                search_items.extend(
+                    github_client.search_repositories(
+                        expand_query_date_placeholders(query)
+                    )
+                )
             github_filter = settings.sources.github.readme_filter
             if github_filter.enabled:
                 filtered_items: list[dict] = []
