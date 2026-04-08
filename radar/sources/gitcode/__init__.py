@@ -1,0 +1,1 @@
+"""GitCode source adapter package."""

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Infra Radar Operations UI</title>
+    <link rel="stylesheet" href="/static/ops/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="page-header">
+        <h1>AI Infra Radar Operations UI</h1>
+        <p>Internal console for alerts, jobs, and runtime operations.</p>
+      </header>
+      <main class="grid">
+        <section class="panel panel-wide" data-panel="alerts">
+          <div class="panel-header">
+            <h2>Alerts</h2>
+            <button id="refresh-alerts" type="button">Refresh alerts</button>
+          </div>
+          <div id="alerts-status" class="status-line">Idle</div>
+          <div class="alerts-layout">
+            <ul id="alerts-list" class="alerts-list"></ul>
+            <article id="alert-detail" class="detail-card">
+              Select an alert to inspect its details.
+            </article>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="jobs">
+          <div class="panel-header">
+            <h2>Jobs</h2>
+          </div>
+          <div id="jobs-status" class="status-line">Idle</div>
+          <div id="jobs-list" class="button-grid"></div>
+        </section>
+
+        <section class="panel" data-panel="runtime">
+          <div class="panel-header">
+            <h2>Runtime / Config</h2>
+            <button id="reload-config" type="button">Reload config</button>
+          </div>
+          <div id="runtime-status" class="status-line">Idle</div>
+          <pre id="runtime-result" class="detail-card">No config reload yet.</pre>
+        </section>
+      </main>
+    </div>
+    <script src="/static/ops/app.js" defer></script>
+  </body>
+</html>
