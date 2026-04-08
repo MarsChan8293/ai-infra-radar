@@ -43,6 +43,13 @@ def build_github_observation(item: dict) -> dict:
     }
 
 
+def readme_matches_keywords(readme_text: str | None, keywords: list[str]) -> bool:
+    if readme_text is None:
+        return False
+    folded = readme_text.casefold()
+    return any(keyword.casefold() in folded for keyword in keywords)
+
+
 def normalize_github_item(item: dict) -> dict:
     """Backward-compatible alias for the GitHub observation builder."""
     return build_github_observation(item)

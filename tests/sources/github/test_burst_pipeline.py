@@ -236,6 +236,30 @@ def test_github_client_fetches_search_items() -> None:
     assert items[1]["full_name"] == "example-org/low-activity-repo"
 
 
+@respx.mock
+def test_github_client_fetches_readme_text() -> None:
+    from radar.sources.github.client import GitHubClient
+
+    respx.get("https://api.github.com/repos/example-org/high-activity-repo/readme").mock(
+        return_value=httpx.Response(200, text="# README\n\n## Citation\n\n@inproceedings{demo}")
+    )
+
+    readme = GitHubClient().fetch_readme_text("example-org/high-activity-repo")
+
+    assert "Citation" in readme
+
+
+@respx.mock
+def test_github_client_missing_readme_returns_none() -> None:
+    from radar.sources.github.client import GitHubClient
+
+    respx.get("https://api.github.com/repos/example-org/no-readme/readme").mock(
+        return_value=httpx.Response(404, text="not found")
+    )
+
+    assert GitHubClient().fetch_readme_text("example-org/no-readme") is None
+
+
 # ---------------------------------------------------------------------------
 # Test 13: process_github_burst creates entity and alert (full integration)
 # ---------------------------------------------------------------------------

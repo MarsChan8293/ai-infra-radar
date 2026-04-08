@@ -289,6 +289,73 @@ sources:
         load_settings(config_path)
 
 
+def test_github_readme_filter_enabled_without_keywords_raises(tmp_path: Path) -> None:
+    config_path = tmp_path / "bad.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: true
+    queries:
+      - kv cache
+    readme_filter:
+      enabled: true
+      require_any: []
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+""".strip()
+    )
+
+    with pytest.raises(ValidationError, match="require_any"):
+        load_settings(config_path)
+
+
+def test_github_readme_filter_keywords_are_loaded(tmp_path: Path) -> None:
+    config_path = tmp_path / "ok.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: true
+    queries:
+      - speculative decoding
+    readme_filter:
+      enabled: true
+      require_any:
+        - citation
+        - bibtex
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+""".strip()
+    )
+
+    settings = load_settings(config_path)
+    assert settings.sources.github.readme_filter.enabled is True
+    assert settings.sources.github.readme_filter.require_any == ["citation", "bibtex"]
+
+
 def test_github_disabled_with_no_queries_is_valid(tmp_path: Path) -> None:
     """github.enabled=false with no queries must be accepted."""
     config_path = tmp_path / "ok.yaml"

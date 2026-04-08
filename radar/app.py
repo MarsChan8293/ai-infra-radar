@@ -31,6 +31,7 @@ from radar.jobs.official_pages import run_official_pages_job
 from radar.sources.github.client import GitHubClient
 from radar.sources.gitcode.client import GitCodeClient
 from radar.sources.huggingface.client import HuggingFaceClient
+from radar.sources.github.pipeline import readme_matches_keywords
 from radar.sources.modelers.client import ModelersClient
 from radar.sources.modelscope.client import ModelScopeClient
 from radar.sources.official_pages.client import fetch_html
@@ -124,6 +125,28 @@ def build_runtime(config_path: Path) -> RuntimeState:
             search_items: list[dict] = []
             for query in settings.sources.github.queries:
                 search_items.extend(github_client.search_repositories(query))
+            github_filter = settings.sources.github.readme_filter
+            if github_filter.enabled:
+                filtered_items: list[dict] = []
+                failures: list[tuple[str, Exception]] = []
+                for item in search_items:
+                    full_name = item["full_name"]
+                    try:
+                        readme_text = github_client.fetch_readme_text(full_name)
+                    except Exception as exc:
+                        failures.append((full_name, exc))
+                        continue
+                    if readme_matches_keywords(readme_text, github_filter.require_any):
+                        filtered_items.append(item)
+                search_items = filtered_items
+                if failures:
+                    failed_repositories = ", ".join(
+                        f"{full_name} ({exc})" for full_name, exc in failures
+                    )
+                    raise RuntimeError(
+                        "github_burst readme filtering failed for repositories: "
+                        f"{failed_repositories}"
+                    )
             return run_github_burst_job(
                 search_items=search_items,
                 threshold=settings.sources.github.burst_threshold,

@@ -159,6 +159,37 @@ Queries the GitHub search API every 15 minutes. Repositories whose computed
 burst score (stars × forks normalised) meets `burst_threshold` emit a
 `github_burst` alert.
 
+To narrow the candidate set down to paper-code repositories, enable the
+optional README secondary filter. This fetches each matched repository's README
+and keeps only repositories whose README contains at least one configured
+keyword such as `citation`, `bibtex`, or `@inproceedings{`.
+
+Example for AI inference performance optimization repositories:
+
+```yaml
+sources:
+  github:
+    enabled: true
+    token: ghp_example
+    queries:
+      - speculative decoding
+      - kv cache
+      - prefix caching
+      - continuous batching
+      - paged attention
+    burst_threshold: 0.25
+    readme_filter:
+      enabled: true
+      require_any:
+        - citation
+        - bibtex
+        - "@inproceedings{"
+        - "@article{"
+```
+
+Filtering is case-insensitive. Repositories without a matching README are
+excluded from the GitHub alert path.
+
 ```bash
 curl -X POST http://localhost:8000/jobs/run/github_burst
 ```

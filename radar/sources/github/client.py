@@ -43,6 +43,23 @@ class GitHubClient:
         response.raise_for_status()
         return response.json()["items"]
 
+    def fetch_readme_text(self, full_name: str) -> str | None:
+        headers: dict[str, str] = {
+            "Accept": "application/vnd.github.raw+json",
+        }
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+
+        response = httpx.get(
+            f"https://api.github.com/repos/{full_name}/readme",
+            headers=headers,
+            timeout=15.0,
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.text
+
 
 def fetch_search_results(query: str, token: str | None = None) -> list[dict]:
     """Backward-compatible wrapper around :class:`GitHubClient`.

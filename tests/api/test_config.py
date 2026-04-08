@@ -203,6 +203,66 @@ def test_reload_registers_gitcode_job_when_enabled(tmp_path: Path) -> None:
         assert set(app.state.scheduler.known_jobs()) == {"daily_digest", "gitcode_repos"}
 
 
+def test_github_job_filters_repositories_by_readme_keywords(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["github"] = {
+        "enabled": True,
+        "token": "ghp_example",
+        "queries": ["kv cache"],
+        "burst_threshold": 0.0,
+        "readme_filter": {
+            "enabled": True,
+            "require_any": ["citation", "bibtex"],
+        },
+    }
+    config_path.write_text(yaml.dump(config))
+
+    class FakeGitHubClient:
+        def __init__(self, token: str | None = None) -> None:
+            self.token = token
+
+        def search_repositories(self, query: str) -> list[dict]:
+            return [
+                {
+                    "full_name": "acme/index-cache",
+                    "html_url": "https://github.com/acme/index-cache",
+                    "stargazers_count": 42,
+                    "forks_count": 8,
+                    "pushed_at": "2026-04-08T00:00:00Z",
+                },
+                {
+                    "full_name": "acme/notes",
+                    "html_url": "https://github.com/acme/notes",
+                    "stargazers_count": 40,
+                    "forks_count": 7,
+                    "pushed_at": "2026-04-08T00:00:00Z",
+                },
+            ]
+
+        def fetch_readme_text(self, full_name: str) -> str | None:
+            if full_name == "acme/index-cache":
+                return "# Citation\n\n```bibtex\n@inproceedings{indexcache}\n```"
+            if full_name == "acme/notes":
+                return "# Overview\n\nInference notes only."
+            raise AssertionError(f"unexpected repository: {full_name}")
+
+    monkeypatch.setattr("radar.app.GitHubClient", FakeGitHubClient)
+
+    from radar.app import build_runtime
+
+    runtime = build_runtime(config_path)
+    try:
+        runtime.scheduler.run("github_burst")
+        alerts = runtime.repo.list_alerts()
+        assert len(alerts) == 1
+        assert alerts[0].reason["full_name"] == "acme/index-cache"
+    finally:
+        runtime.engine.dispose()
+
+
 def test_huggingface_job_continues_after_organization_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

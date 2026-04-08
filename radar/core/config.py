@@ -52,12 +52,25 @@ class ChannelSettings(BaseModel):
     email: EmailChannelSettings
 
 
+class GitHubReadmeFilterSettings(BaseModel):
+    model_config = _FORBID
+    enabled: bool = False
+    require_any: list[str] = []
+
+    @model_validator(mode="after")
+    def _require_keywords_when_enabled(self) -> "GitHubReadmeFilterSettings":
+        if self.enabled and not self.require_any:
+            raise ValueError("require_any must contain at least one entry when readme_filter is enabled")
+        return self
+
+
 class GitHubSettings(BaseModel):
     model_config = _FORBID
     enabled: bool
     token: str | None = None
     queries: list[str] = []
     burst_threshold: float = 0.6
+    readme_filter: GitHubReadmeFilterSettings = GitHubReadmeFilterSettings()
 
     @model_validator(mode="after")
     def _require_queries_when_enabled(self) -> "GitHubSettings":
