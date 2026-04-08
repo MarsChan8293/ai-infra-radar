@@ -6,6 +6,7 @@ import typer
 
 from radar.app import build_runtime
 from radar.core.config import load_settings
+from radar.pages.export import export_pages_site
 
 cli = typer.Typer(no_args_is_help=True)
 _SOURCE_TO_JOB = {
@@ -86,6 +87,19 @@ def send_test_notification(
     else:
         typer.echo(f"error: unknown channel {channel!r}", err=True)
         raise typer.Exit(1)
+
+
+@cli.command("export-pages")
+def export_pages(
+    config: Path = typer.Option(..., "--config", help="Path to radar.yaml"),
+    output: Path = typer.Option(..., "--output", help="Directory to write Pages site"),
+) -> None:
+    runtime = build_runtime(config)
+    try:
+        export_pages_site(runtime.repo, output)
+        typer.echo(f"pages exported to {output}")
+    finally:
+        runtime.engine.dispose()
 
 
 if __name__ == "__main__":

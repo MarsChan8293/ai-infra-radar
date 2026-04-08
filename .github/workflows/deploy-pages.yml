@@ -1,0 +1,85 @@
+name: Deploy Radar Pages
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      - name: Write runtime config
+        env:
+          RADAR_CONFIG_YAML: ${{ secrets.RADAR_CONFIG_YAML }}
+        run: |
+          test -n "$RADAR_CONFIG_YAML"
+          mkdir -p .tmp
+          printf '%s\n' "$RADAR_CONFIG_YAML" > .tmp/radar.yaml
+
+      - name: Run configured collection jobs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from radar.app import build_runtime
+
+          runtime = build_runtime(Path(".tmp/radar.yaml"))
+          try:
+              for job_name in sorted(runtime.scheduler.known_jobs()):
+                  if job_name == "daily_digest":
+                      continue
+                  runtime.scheduler.run(job_name)
+                  print(f"ran {job_name}")
+          finally:
+              runtime.engine.dispose()
+          PY
+
+      - name: Export Pages site
+        run: python3 -m radar.cli export-pages --config .tmp/radar.yaml --output site
+
+      - name: Commit static archive
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site
+          if git diff --cached --quiet; then
+            echo "No site changes to commit"
+          else
+            git commit -m "chore: update radar pages"
+            git pull --rebase
+            git push
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

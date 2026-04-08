@@ -7,15 +7,31 @@ async function fetchJson(url, options) {
   return response.json();
 }
 
+let manifestState = { dates: [] };
 let activeDate = null;
 let activeTopic = "all";
 let activeReport = null;
+
+function getResultsConfig() {
+  const config = window.__RADAR_RESULTS_CONFIG__ || {};
+  const manifestPath = config.manifestPath || "/reports/manifest";
+  const reportBasePath = config.reportBasePath || "/reports";
+  return {
+    manifestPath,
+    reportPath(date) {
+      return config.mode === "static"
+        ? `${reportBasePath}/${date}.json`
+        : `${reportBasePath}/${date}`;
+    },
+  };
+}
 
 function setStatus(message) {
   document.getElementById("report-status").textContent = message;
 }
 
 function renderManifest(manifest) {
+  manifestState = manifest;
   const dateList = document.getElementById("date-list");
   dateList.innerHTML = "";
 
@@ -98,9 +114,13 @@ async function loadReport(date) {
   activeDate = date;
   activeTopic = "all";
   setStatus(`Loading ${date}...`);
-  renderManifest({ dates: Array.from(document.querySelectorAll("#date-list button")).map((button) => ({ date: button.textContent.split(" ")[0], count: 0 })) });
+  renderManifest(manifestState);
   try {
-    const report = await fetchJson(`/reports/${date}`);
+    const config = getResultsConfig();
+    const report =
+      config.manifestPath === "/reports/manifest"
+        ? await fetchJson(`/reports/${date}`)
+        : await fetchJson(config.reportPath(date));
     renderReport(report);
     setStatus(`Loaded ${date}`);
   } catch (error) {
@@ -114,7 +134,11 @@ async function loadReport(date) {
 async function loadManifest() {
   setStatus("Loading reports...");
   try {
-    const manifest = await fetchJson("/reports/manifest");
+    const config = getResultsConfig();
+    const manifest =
+      config.manifestPath === "/reports/manifest"
+        ? await fetchJson("/reports/manifest")
+        : await fetchJson(config.manifestPath);
     if (manifest.dates.length === 0) {
       document.getElementById("date-list").innerHTML = "";
       document.getElementById("topic-list").innerHTML = "";

@@ -19,12 +19,7 @@ def _group_events(events: list[dict]) -> list[dict]:
     ]
 
 
-@router.get("/manifest")
-def get_reports_manifest(request: Request) -> dict:
-    repo = request.app.state.repo
-    if repo is None:
-        return {"generated_at": None, "dates": []}
-
+def build_report_manifest(repo) -> dict:
     dates = []
     for day in repo.list_report_days():
         events = repo.list_alerts_for_day(day)
@@ -38,12 +33,7 @@ def get_reports_manifest(request: Request) -> dict:
     return {"generated_at": datetime.now(timezone.utc).isoformat(), "dates": dates}
 
 
-@router.get("/{day}")
-def get_report_for_day(day: str, request: Request) -> dict:
-    repo = request.app.state.repo
-    if repo is None:
-        raise HTTPException(status_code=404, detail="report not found")
-
+def build_report_payload(repo, day: str) -> dict:
     events = repo.list_alerts_for_day(day)
     if not events:
         raise HTTPException(status_code=404, detail="report not found")
@@ -60,3 +50,19 @@ def get_report_for_day(day: str, request: Request) -> dict:
         },
         "topics": _group_events(events),
     }
+
+
+@router.get("/manifest")
+def get_reports_manifest(request: Request) -> dict:
+    repo = request.app.state.repo
+    if repo is None:
+        return {"generated_at": None, "dates": []}
+    return build_report_manifest(repo)
+
+
+@router.get("/{day}")
+def get_report_for_day(day: str, request: Request) -> dict:
+    repo = request.app.state.repo
+    if repo is None:
+        raise HTTPException(status_code=404, detail="report not found")
+    return build_report_payload(repo, day)

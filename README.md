@@ -119,6 +119,27 @@ The operations console includes:
 - manual job trigger buttons
 - config reload feedback
 
+## GitHub Pages
+
+Export the radar results browser as a static site:
+
+```bash
+python3 -m radar.cli export-pages --config config/radar.yaml --output site
+```
+
+The exporter writes a GitHub Pages-friendly archive with:
+
+- `index.html`
+- `app.js`
+- `styles.css`
+- `manifest.json`
+- `reports/YYYY-MM-DD.json`
+
+The repository workflow supports both **scheduled publishing** and **manual
+workflow dispatch**. Configure a `RADAR_CONFIG_YAML` repository secret so the
+workflow can build runtime settings, collect current source data, preserve the
+existing static archive, and deploy the refreshed site to GitHub Pages.
+
 ## MVP paths
 
 ### 1 · Official-page monitoring
