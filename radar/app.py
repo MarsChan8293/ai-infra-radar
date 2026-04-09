@@ -13,6 +13,7 @@ from radar.alerts.service import AlertService
 from radar.alerts.webhook import send_webhook
 from radar.api.routes.alerts import router as alerts_router
 from radar.api.routes.config import router as config_router
+from radar.api.routes.feed import router as feed_router
 from radar.api.routes.health import router as health_router
 from radar.api.routes.home import router as home_router
 from radar.api.routes.jobs import router as jobs_router
@@ -369,6 +370,7 @@ def create_app(lifespan: Any = None) -> FastAPI:
     app.include_router(jobs_router)
     app.include_router(config_router)
     app.include_router(reports_router)
+    app.include_router(feed_router)
     app.include_router(ui_router)
     app.mount(
         "/static/results",
@@ -392,5 +394,5 @@ def create_app(lifespan: Any = None) -> FastAPI:
     app.state.modelscope_client = None
     app.state.modelers_client = None
     app.state.gitcode_client = None
-    app.state.report_summarizer = None
+    app.state.report_summarizer = NullReportSummarizer()
     return app

@@ -1,10 +1,12 @@
 """Report browsing API routes."""
 from __future__ import annotations
 
-from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
+
+from radar.reports.enrichment import build_enriched_daily_report
+from radar.reports.summarization import NullReportSummarizer
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -23,47 +25,43 @@ def _dedupe_events(events: list[dict]) -> list[dict]:
     return sorted(best_by_entity.values(), key=_event_rank, reverse=True)
 
 
-def _group_events(events: list[dict]) -> list[dict]:
-    grouped: dict[str, list[dict]] = defaultdict(list)
-    for event in events:
-        grouped[event["source"]].append(event)
-    return [
-        {"topic": topic, "count": len(items), "events": items}
-        for topic, items in sorted(grouped.items())
-    ]
+def _get_report_summarizer(request: Request):
+    summarizer = getattr(request.app.state, "report_summarizer", None)
+    if summarizer is None:
+        return NullReportSummarizer()
+    return summarizer
 
 
-def build_report_manifest(repo) -> dict:
+def build_report_manifest(repo, *, report_summarizer) -> dict:
     dates = []
     for day in repo.list_report_days():
-        events = _dedupe_events(repo.list_alerts_for_day(day))
+        payload = build_report_payload(repo, day, report_summarizer=report_summarizer)
         dates.append(
             {
                 "date": day,
-                "count": len(events),
-                "topics": sorted({event["source"] for event in events}),
+                "count": payload["summary"]["total_alerts"],
+                "topics": sorted(topic["topic"] for topic in payload["topics"]),
+                "filter_counts": {
+                    key: len(values) for key, values in payload["filters"].items()
+                },
+                "briefing_available": bool(
+                    payload["summary"].get("briefing_zh")
+                    or payload["summary"].get("briefing_en")
+                ),
             }
         )
     return {"generated_at": datetime.now(timezone.utc).isoformat(), "dates": dates}
 
 
-def build_report_payload(repo, day: str) -> dict:
+def build_report_payload(repo, day: str, *, report_summarizer) -> dict:
     events = _dedupe_events(repo.list_alerts_for_day(day))
     if not events:
         raise HTTPException(status_code=404, detail="report not found")
-
-    top_sources = Counter(event["source"] for event in events).most_common()
-    return {
-        "date": day,
-        "summary": {
-            "total_alerts": len(events),
-            "top_sources": [
-                {"source": source, "count": count} for source, count in top_sources
-            ],
-            "max_score": max(event["score"] for event in events),
-        },
-        "topics": _group_events(events),
-    }
+    return build_enriched_daily_report(
+        date=day,
+        events=events,
+        summarizer=report_summarizer,
+    )
 
 
 @router.get("/manifest")
@@ -71,7 +69,10 @@ def get_reports_manifest(request: Request) -> dict:
     repo = request.app.state.repo
     if repo is None:
         return {"generated_at": None, "dates": []}
-    return build_report_manifest(repo)
+    return build_report_manifest(
+        repo,
+        report_summarizer=_get_report_summarizer(request),
+    )
 
 
 @router.get("/{day}")
@@ -79,4 +80,8 @@ def get_report_for_day(day: str, request: Request) -> dict:
     repo = request.app.state.repo
     if repo is None:
         raise HTTPException(status_code=404, detail="report not found")
-    return build_report_payload(repo, day)
+    return build_report_payload(
+        repo,
+        day,
+        report_summarizer=_get_report_summarizer(request),
+    )

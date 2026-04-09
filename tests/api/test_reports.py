@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from radar.app import create_app
 from radar.core.models import Alert
 from radar.core.repositories import RadarRepository
+from radar.reports.summarization import NullReportSummarizer
 
 
 def _make_client(repo: RadarRepository) -> TestClient:
@@ -16,6 +17,7 @@ def _make_client(repo: RadarRepository) -> TestClient:
     app.state.scheduler = None
     app.state.settings = None
     app.state.config_path = None
+    app.state.report_summarizer = NullReportSummarizer()
     return TestClient(app)
 
 
@@ -228,3 +230,44 @@ def test_reports_date_endpoint_prefers_larger_id_when_score_and_time_match(
     assert body["summary"]["total_alerts"] == 1
     assert body["topics"][0]["events"][0]["id"] == second.id
     assert body["topics"][0]["events"][0]["reason"]["stars"] == 25
+
+
+def test_reports_date_endpoint_exposes_search_filter_and_bilingual_fields(
+    repo: RadarRepository,
+) -> None:
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/tool",
+        display_name="acme/tool",
+        url="https://github.com/acme/tool",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.9,
+        dedupe_key="github:burst:rich",
+        reason={"full_name": "acme/tool", "stars": 25},
+    )
+
+    client = _make_client(repo)
+    date_str = client.get("/reports/manifest").json()["dates"][0]["date"]
+
+    response = client.get(f"/reports/{date_str}")
+
+    assert response.status_code == 200
+    body = response.json()
+    event = body["topics"][0]["events"][0]
+
+    assert "filters" in body
+    assert "briefing_zh" in body["summary"]
+    assert "briefing_en" in body["summary"]
+    assert "filter_counts" in client.get("/reports/manifest").json()["dates"][0]
+    assert "briefing_available" in client.get("/reports/manifest").json()["dates"][0]
+    assert "search_text" in event
+    assert "filter_tags" in event
+    assert "reason_text_zh" in event
+    assert "reason_text_en" in event
+    assert "title_zh" in event
+    assert body["filters"]["sources"][0]["value"] == "github"

@@ -6,6 +6,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from radar.cli import cli
+from radar.reports.summarization import NullReportSummarizer
 
 
 def test_export_pages_writes_static_shell_manifest_and_daily_json(
@@ -29,7 +30,11 @@ def test_export_pages_writes_static_shell_manifest_and_daily_json(
         reason={"full_name": "acme/tool"},
     )
 
-    export_pages_site(repo, output_dir=tmp_path)
+    export_pages_site(
+        repo,
+        output_dir=tmp_path,
+        report_summarizer=NullReportSummarizer(),
+    )
 
     assert (tmp_path / "index.html").exists()
     assert (tmp_path / "app.js").exists()
@@ -87,7 +92,11 @@ def test_export_pages_site_uses_deduplicated_daily_report(
         reason={"full_name": "acme/tool"},
     )
 
-    export_pages_site(repo, output_dir=tmp_path)
+    export_pages_site(
+        repo,
+        output_dir=tmp_path,
+        report_summarizer=NullReportSummarizer(),
+    )
 
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     report = json.loads((tmp_path / "reports" / f'{manifest["dates"][0]["date"]}.json').read_text())
@@ -184,13 +193,54 @@ def test_export_pages_preserves_existing_historical_reports(
         reason={"model_id": "Qwen/Qwen3"},
     )
 
-    export_pages_site(repo, output_dir=tmp_path)
+    export_pages_site(
+        repo,
+        output_dir=tmp_path,
+        report_summarizer=NullReportSummarizer(),
+    )
 
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     dates = [entry["date"] for entry in manifest["dates"]]
     assert historical_date in dates
     assert len(dates) == 2
     assert (tmp_path / "reports" / f"{historical_date}.json").exists()
+
+
+def test_export_pages_writes_feed_and_enriched_report_fields(
+    tmp_path: Path, repo
+) -> None:
+    from radar.pages.export import export_pages_site
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/tool",
+        display_name="acme/tool",
+        url="https://github.com/acme/tool",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.8,
+        dedupe_key="github:burst:feed",
+        reason={"full_name": "acme/tool"},
+    )
+
+    export_pages_site(
+        repo,
+        output_dir=tmp_path,
+        report_summarizer=NullReportSummarizer(),
+    )
+
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    report = json.loads((tmp_path / "reports" / f'{manifest["dates"][0]["date"]}.json').read_text())
+
+    assert (tmp_path / "feed.xml").exists()
+    assert "filters" in report
+    assert "briefing_zh" in report["summary"]
+    assert "briefing_en" in report["summary"]
+    assert "search_text" in report["topics"][0]["events"][0]
 
 
 def test_readme_mentions_github_pages_export() -> None:
