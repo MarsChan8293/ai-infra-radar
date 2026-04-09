@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
-from email.utils import format_datetime
-from xml.sax.saxutils import escape
-
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
-from radar.api.routes.reports import build_report_payload
+from radar.reports.builder import build_feed_xml_from_reports, build_report_payload
 from radar.reports.summarization import NullReportSummarizer
 
 router = APIRouter(tags=["feed"])
@@ -20,40 +16,16 @@ def build_feed_xml(repo, *, report_summarizer) -> str:
             "<rss version='2.0'><channel><title>AI Infra Radar</title></channel></rss>"
         )
 
-    items: list[str] = []
-    for day in repo.list_report_days()[:7]:
-        report = build_report_payload(
+    reports = [
+        build_report_payload(
             repo,
             day,
             report_summarizer=report_summarizer,
+            include_daily_briefing=False,
         )
-        for topic in report["topics"]:
-            for event in topic["events"]:
-                description = (
-                    event.get("reason_text_zh")
-                    or event.get("reason_text_en")
-                    or str(event.get("reason") or "")
-                )
-                pub_date = format_datetime(datetime.fromisoformat(event["created_at"]))
-                items.append(
-                    "<item>"
-                    f"<title>{escape(event['display_name'])}</title>"
-                    f"<link>{escape(event['url'])}</link>"
-                    f"<description>{escape(description)}</description>"
-                    f"<pubDate>{escape(pub_date)}</pubDate>"
-                    f"<guid>{escape(str(event['id']))}</guid>"
-                    "</item>"
-                )
-
-    return (
-        "<?xml version='1.0' encoding='UTF-8'?>"
-        "<rss version='2.0'><channel>"
-        "<title>AI Infra Radar</title>"
-        "<description>AI Infra Radar enriched daily report feed</description>"
-        "<link>/feed.xml</link>"
-        f"{''.join(items)}"
-        "</channel></rss>"
-    )
+        for day in repo.list_report_days()[:7]
+    ]
+    return build_feed_xml_from_reports(reports)
 
 
 @router.get("/feed.xml", include_in_schema=False)

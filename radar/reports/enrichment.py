@@ -55,10 +55,7 @@ def enrich_report_events(
 ) -> list[dict[str, Any]]:
     enriched: list[dict[str, Any]] = []
     for event in events:
-        try:
-            summary_fields = summarizer.summarize_entry(event)
-        except Exception:
-            summary_fields = _empty_entry_summary()
+        summary_fields = summarizer.summarize_entry(event)
 
         enriched_event = {
             **event,
@@ -105,16 +102,16 @@ def build_enriched_daily_report(
     date: str,
     events: list[dict[str, Any]],
     summarizer: Any,
+    include_daily_briefing: bool = True,
 ) -> dict[str, Any]:
     enriched = enrich_report_events(events, summarizer=summarizer)
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for event in enriched:
         grouped[event["source"]].append(event)
 
-    try:
+    briefing = _empty_daily_briefing()
+    if include_daily_briefing:
         briefing = summarizer.summarize_daily_briefing(date=date, entries=enriched)
-    except Exception:
-        briefing = _empty_daily_briefing()
 
     top_sources = Counter(event["source"] for event in enriched).most_common()
     return {

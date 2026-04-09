@@ -103,6 +103,7 @@ def export_pages(
         )
         typer.echo(f"pages exported to {output}")
     finally:
+        runtime.report_summarizer.close()
         runtime.engine.dispose()
 
 

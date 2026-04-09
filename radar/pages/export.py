@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from radar.api.routes.feed import build_feed_xml
-from radar.api.routes.reports import build_report_manifest, build_report_payload
+from radar.reports.builder import (
+    build_feed_xml_from_reports,
+    build_report_manifest_from_reports,
+    build_report_payload,
+)
 from radar.reports.summarization import NullReportSummarizer
 
 _RESULTS_UI_DIR = Path(__file__).resolve().parents[1] / "ui" / "results"
@@ -31,17 +34,18 @@ def _build_static_index() -> str:
     return html
 
 
-def _load_existing_entries(output_dir: Path) -> list[dict]:
+def _load_existing_reports(output_dir: Path) -> list[dict]:
     manifest_path = output_dir / "manifest.json"
     if not manifest_path.exists():
         return []
 
     data = json.loads(manifest_path.read_text())
-    entries: list[dict] = []
+    reports: list[dict] = []
     for entry in data.get("dates", []):
-        if (output_dir / "reports" / f'{entry["date"]}.json').exists():
-            entries.append(entry)
-    return entries
+        report_path = output_dir / "reports" / f'{entry["date"]}.json'
+        if report_path.exists():
+            reports.append(json.loads(report_path.read_text()))
+    return reports
 
 
 def export_pages_site(repository, output_dir: Path, *, report_summarizer=None) -> None:
@@ -56,34 +60,27 @@ def export_pages_site(repository, output_dir: Path, *, report_summarizer=None) -
         (_RESULTS_UI_DIR / "styles.css").read_text()
     )
 
-    current_manifest = build_report_manifest(
-        repository,
-        report_summarizer=report_summarizer,
-    )
-    merged_entries = {
-        entry["date"]: entry for entry in _load_existing_entries(output_dir)
-    }
-    for entry in current_manifest["dates"]:
-        merged_entries[entry["date"]] = entry
-    manifest = {
-        "generated_at": current_manifest["generated_at"],
-        "dates": [
-        merged_entries[day] for day in sorted(merged_entries.keys(), reverse=True)
-        ],
-    }
+    reports = [
+        build_report_payload(
+            repository,
+            day,
+            report_summarizer=report_summarizer,
+        )
+        for day in repository.list_report_days()
+    ]
+    merged_reports = {report["date"]: report for report in _load_existing_reports(output_dir)}
+    for report in reports:
+        merged_reports[report["date"]] = report
+    ordered_reports = [
+        merged_reports[day] for day in sorted(merged_reports.keys(), reverse=True)
+    ]
+    manifest = build_report_manifest_from_reports(ordered_reports)
     (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     reports_dir = output_dir / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
-    for entry in current_manifest["dates"]:
-        report = build_report_payload(
-            repository,
-            entry["date"],
-            report_summarizer=report_summarizer,
-        )
-        (reports_dir / f'{entry["date"]}.json').write_text(
+    for report in reports:
+        (reports_dir / f'{report["date"]}.json').write_text(
             json.dumps(report, indent=2) + "\n"
         )
-    (output_dir / "feed.xml").write_text(
-        build_feed_xml(repository, report_summarizer=report_summarizer)
-    )
+    (output_dir / "feed.xml").write_text(build_feed_xml_from_reports(ordered_reports))

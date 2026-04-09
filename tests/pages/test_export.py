@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -109,7 +110,13 @@ def test_export_pages_site_uses_deduplicated_daily_report(
 def test_export_pages_cli_runs(monkeypatch, tmp_path: Path) -> None:
     calls: list[tuple[Path, object]] = []
     disposed: list[bool] = []
-    report_summarizer = object()
+    closed: list[bool] = []
+
+    class FakeSummarizer:
+        def close(self) -> None:
+            closed.append(True)
+
+    report_summarizer = FakeSummarizer()
 
     class FakeEngine:
         def dispose(self) -> None:
@@ -144,6 +151,7 @@ def test_export_pages_cli_runs(monkeypatch, tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert calls == [(tmp_path / "site", report_summarizer)]
+    assert closed == [True]
     assert disposed == [True]
     assert "pages exported to" in result.output
 
@@ -243,6 +251,197 @@ def test_export_pages_writes_feed_and_enriched_report_fields(
     assert "briefing_zh" in report["summary"]
     assert "briefing_en" in report["summary"]
     assert "search_text" in report["topics"][0]["events"][0]
+
+
+def test_export_pages_site_reuses_built_reports_for_manifest_and_feed(
+    tmp_path: Path, repo
+) -> None:
+    from radar.pages.export import export_pages_site
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/tool",
+        display_name="acme/tool",
+        url="https://github.com/acme/tool",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.8,
+        dedupe_key="github:burst:reuse",
+        reason={"full_name": "acme/tool"},
+    )
+
+    class CountingSummarizer:
+        def __init__(self) -> None:
+            self.entry_calls = 0
+            self.briefing_calls = 0
+
+        def summarize_entry(self, entry: dict) -> dict[str, str | None]:
+            self.entry_calls += 1
+            return {"title_zh": None, "reason_text_zh": None, "reason_text_en": "summary"}
+
+        def summarize_daily_briefing(
+            self, *, date: str, entries: list[dict]
+        ) -> dict[str, str | None]:
+            self.briefing_calls += 1
+            return {"briefing_zh": "日报", "briefing_en": "briefing"}
+
+        def close(self) -> None:
+            return None
+
+    summarizer = CountingSummarizer()
+
+    export_pages_site(
+        repo,
+        output_dir=tmp_path,
+        report_summarizer=summarizer,
+    )
+
+    assert summarizer.entry_calls == 1
+    assert summarizer.briefing_calls == 1
+
+
+def test_export_pages_feed_matches_live_seven_day_window(
+    tmp_path: Path, repo
+) -> None:
+    from radar.api.routes.feed import build_feed_xml
+    from radar.pages.export import export_pages_site
+
+    for day in range(1, 10):
+        entity = repo.upsert_entity(
+            source="github",
+            entity_type="repository",
+            canonical_name=f"github:acme/tool-{day}",
+            display_name=f"acme/tool-{day}",
+            url=f"https://github.com/acme/tool-{day}",
+        )
+        alert = repo.create_alert(
+            alert_type="github_burst",
+            entity_id=entity.id,
+            source="github",
+            score=0.8,
+            dedupe_key=f"github:burst:window:{day}",
+            reason={"full_name": f"acme/tool-{day}"},
+        )
+        with repo._session_factory() as session:
+            session_alert = session.get(type(alert), alert.id)
+            session_alert.created_at = datetime(2026, 4, day, 12, tzinfo=timezone.utc)
+            session.commit()
+
+    summarizer = NullReportSummarizer()
+
+    export_pages_site(
+        repo,
+        output_dir=tmp_path,
+        report_summarizer=summarizer,
+    )
+
+    exported_feed = (tmp_path / "feed.xml").read_text()
+    live_feed = build_feed_xml(repo, report_summarizer=summarizer)
+
+    assert exported_feed == live_feed
+    assert "acme/tool-1" not in exported_feed
+    assert "acme/tool-9" in exported_feed
+
+
+def test_export_pages_feed_includes_preserved_reports_within_window(
+    tmp_path: Path, repo
+) -> None:
+    from radar.pages.export import export_pages_site
+
+    preserved_date = "2026-04-08"
+    (tmp_path / "reports").mkdir(parents=True, exist_ok=True)
+    preserved_report = {
+        "date": preserved_date,
+        "summary": {
+            "total_alerts": 1,
+            "top_sources": [{"source": "github", "count": 1}],
+            "max_score": 0.8,
+            "briefing_zh": None,
+            "briefing_en": None,
+        },
+        "filters": {
+            "sources": [{"value": "github", "count": 1}],
+            "alert_types": [{"value": "github_burst", "count": 1}],
+            "score_bands": [{"value": "high", "count": 1}],
+            "topic_tags": [{"value": "github", "count": 1}],
+        },
+        "topics": [
+            {
+                "topic": "github",
+                "count": 1,
+                "events": [
+                    {
+                        "id": 101,
+                        "display_name": "acme/preserved",
+                        "url": "https://github.com/acme/preserved",
+                        "created_at": "2026-04-08T12:00:00+00:00",
+                        "reason": {"full_name": "acme/preserved"},
+                        "reason_text_zh": None,
+                        "reason_text_en": "preserved summary",
+                    }
+                ],
+            }
+        ],
+    }
+    (tmp_path / "reports" / f"{preserved_date}.json").write_text(
+        json.dumps(preserved_report)
+    )
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-04-08T12:00:00+00:00",
+                "dates": [
+                    {
+                        "date": preserved_date,
+                        "count": 1,
+                        "topics": ["github"],
+                        "filter_counts": {
+                            "sources": 1,
+                            "alert_types": 1,
+                            "score_bands": 1,
+                            "topic_tags": 1,
+                        },
+                        "briefing_available": False,
+                    }
+                ],
+            }
+        )
+    )
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/current",
+        display_name="acme/current",
+        url="https://github.com/acme/current",
+    )
+    alert = repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.9,
+        dedupe_key="github:burst:current-feed-window",
+        reason={"full_name": "acme/current"},
+    )
+    with repo._session_factory() as session:
+        session_alert = session.get(type(alert), alert.id)
+        session_alert.created_at = datetime(2026, 4, 9, 12, tzinfo=timezone.utc)
+        session.commit()
+
+    export_pages_site(
+        repo,
+        output_dir=tmp_path,
+        report_summarizer=NullReportSummarizer(),
+    )
+
+    exported_feed = (tmp_path / "feed.xml").read_text()
+
+    assert "acme/current" in exported_feed
+    assert "acme/preserved" in exported_feed
 
 
 def test_readme_mentions_github_pages_export() -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
+import pytest
 
 from radar.app import create_app
 from radar.core.models import Alert
@@ -152,6 +153,54 @@ def test_reports_manifest_counts_unique_entities_per_day(repo: RadarRepository) 
     assert response.status_code == 200
     body = response.json()
     assert body["dates"][0]["count"] == 1
+
+
+def test_reports_manifest_does_not_call_report_summarizer(repo: RadarRepository) -> None:
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/tool",
+        display_name="acme/tool",
+        url="https://github.com/acme/tool",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.9,
+        dedupe_key="github:burst:manifest-no-summary",
+        reason={"full_name": "acme/tool"},
+    )
+
+    class CountingSummarizer:
+        def __init__(self) -> None:
+            self.entry_calls = 0
+            self.briefing_calls = 0
+
+        def summarize_entry(self, entry: dict) -> dict[str, str | None]:
+            self.entry_calls += 1
+            return {"title_zh": "标题", "reason_text_zh": "摘要", "reason_text_en": "summary"}
+
+        def summarize_daily_briefing(
+            self, *, date: str, entries: list[dict]
+        ) -> dict[str, str | None]:
+            self.briefing_calls += 1
+            return {"briefing_zh": "日报", "briefing_en": "briefing"}
+
+        def close(self) -> None:
+            return None
+
+    app = create_app()
+    app.state.repo = repo
+    summarizer = CountingSummarizer()
+    app.state.report_summarizer = summarizer
+    client = TestClient(app)
+
+    response = client.get("/reports/manifest")
+
+    assert response.status_code == 200
+    assert summarizer.entry_calls == 0
+    assert summarizer.briefing_calls == 0
 
 
 def test_reports_date_endpoint_prefers_newer_alert_when_scores_match(
@@ -329,3 +378,85 @@ def test_reports_date_endpoint_falls_back_to_null_summarizer_when_state_is_missi
     assert body["topics"][0]["events"][0]["title_zh"] == "回退标题"
     assert body["topics"][0]["events"][0]["reason_text_zh"] == "回退摘要"
     assert body["topics"][0]["events"][0]["reason_text_en"] == "fallback summary"
+
+
+def test_reports_date_endpoint_surfaces_summarizer_entry_failures(
+    repo: RadarRepository,
+) -> None:
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/tool",
+        display_name="acme/tool",
+        url="https://github.com/acme/tool",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.9,
+        dedupe_key="github:burst:entry-failure",
+        reason={"full_name": "acme/tool"},
+    )
+
+    class FailingSummarizer:
+        def summarize_entry(self, entry: dict) -> dict[str, str | None]:
+            raise RuntimeError("entry provider failed")
+
+        def summarize_daily_briefing(
+            self, *, date: str, entries: list[dict]
+        ) -> dict[str, str | None]:
+            return {"briefing_zh": None, "briefing_en": None}
+
+        def close(self) -> None:
+            return None
+
+    app = create_app()
+    app.state.repo = repo
+    app.state.report_summarizer = FailingSummarizer()
+    client = TestClient(app)
+    date_str = client.get("/reports/manifest").json()["dates"][0]["date"]
+
+    with pytest.raises(RuntimeError, match="entry provider failed"):
+        client.get(f"/reports/{date_str}")
+
+
+def test_reports_date_endpoint_surfaces_daily_briefing_failures(
+    repo: RadarRepository,
+) -> None:
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/tool",
+        display_name="acme/tool",
+        url="https://github.com/acme/tool",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.9,
+        dedupe_key="github:burst:briefing-failure",
+        reason={"full_name": "acme/tool"},
+    )
+
+    class FailingSummarizer:
+        def summarize_entry(self, entry: dict) -> dict[str, str | None]:
+            return {"title_zh": None, "reason_text_zh": None, "reason_text_en": "summary"}
+
+        def summarize_daily_briefing(
+            self, *, date: str, entries: list[dict]
+        ) -> dict[str, str | None]:
+            raise RuntimeError("briefing provider failed")
+
+        def close(self) -> None:
+            return None
+
+    app = create_app()
+    app.state.repo = repo
+    app.state.report_summarizer = FailingSummarizer()
+    client = TestClient(app)
+    date_str = client.get("/reports/manifest").json()["dates"][0]["date"]
+
+    with pytest.raises(RuntimeError, match="briefing provider failed"):
+        client.get(f"/reports/{date_str}")
