@@ -43,23 +43,10 @@ class OpenAIReportSummarizer:
             },
             ensure_ascii=False,
         )[: self._max_input_chars]
-        response = self._client.post(
-            "/chat/completions",
-            json={
-                "model": self._model,
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "Return JSON with title_zh, reason_text_zh, reason_text_en.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            },
+        payload = self._request_json(
+            system_prompt="Return JSON with title_zh, reason_text_zh, reason_text_en.",
+            prompt=prompt,
         )
-        response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-        payload = json.loads(content)
         return {
             "title_zh": payload.get("title_zh"),
             "reason_text_zh": payload.get("reason_text_zh"),
@@ -69,25 +56,30 @@ class OpenAIReportSummarizer:
     def summarize_daily_briefing(
         self, *, date: str, entries: list[dict[str, Any]]
     ) -> dict[str, str | None]:
-        prompt = json.dumps({"date": date, "entries": entries}, ensure_ascii=False)[: self._max_input_chars]
+        prompt = json.dumps({"date": date, "entries": entries}, ensure_ascii=False)[
+            : self._max_input_chars
+        ]
+        payload = self._request_json(
+            system_prompt="Return JSON with briefing_zh and briefing_en.",
+            prompt=prompt,
+        )
+        return {
+            "briefing_zh": payload.get("briefing_zh"),
+            "briefing_en": payload.get("briefing_en"),
+        }
+
+    def _request_json(self, *, system_prompt: str, prompt: str) -> dict[str, Any]:
         response = self._client.post(
             "/chat/completions",
             json={
                 "model": self._model,
                 "response_format": {"type": "json_object"},
                 "messages": [
-                    {
-                        "role": "system",
-                        "content": "Return JSON with briefing_zh and briefing_en.",
-                    },
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt},
                 ],
             },
         )
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
-        payload = json.loads(content)
-        return {
-            "briefing_zh": payload.get("briefing_zh"),
-            "briefing_en": payload.get("briefing_en"),
-        }
+        return json.loads(content)

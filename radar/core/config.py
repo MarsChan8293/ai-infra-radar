@@ -189,21 +189,8 @@ class Settings(BaseModel):
     summarization: SummarizationSettings = SummarizationSettings()
 
 
-def _validate_summarization_block(data: dict[str, object]) -> None:
-    summarization = data.get("summarization")
-    if not isinstance(summarization, dict) or not summarization.get("enabled"):
-        return
-    if not summarization.get("base_url"):
-        raise ValueError("base_url is required when summarization is enabled")
-    if not summarization.get("api_key"):
-        raise ValueError("api_key is required when summarization is enabled")
-    if not summarization.get("model"):
-        raise ValueError("model is required when summarization is enabled")
-
-
 def load_settings(path: Path) -> Settings:
     data = yaml.safe_load(path.read_text())
     if data is None:
         data = {}
-    _validate_summarization_block(data)
     return Settings.model_validate(data)

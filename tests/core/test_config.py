@@ -177,6 +177,39 @@ def test_settings_model_validate_requires_provider_fields_when_summarization_ena
         )
 
 
+def test_load_settings_allows_missing_provider_fields_when_summarization_disabled(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+summarization:
+  enabled: false
+""".strip()
+    )
+
+    settings = load_settings(config_path)
+
+    assert settings.summarization.enabled is False
+    assert settings.summarization.base_url is None
+
+
 def test_backfill_source_huggingface_runs_registered_job(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

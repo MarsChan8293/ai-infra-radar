@@ -85,6 +85,18 @@ def _build_email_sender(settings: Settings):
     return _sender
 
 
+def _build_report_summarizer(settings: Settings) -> Any:
+    if settings.summarization.enabled:
+        return OpenAIReportSummarizer(
+            base_url=str(settings.summarization.base_url),
+            api_key=settings.summarization.api_key or "",
+            model=settings.summarization.model or "",
+            timeout_seconds=settings.summarization.timeout_seconds,
+            max_input_chars=settings.summarization.max_input_chars,
+        )
+    return NullReportSummarizer()
+
+
 def build_runtime(config_path: Path) -> RuntimeState:
     settings = load_settings(config_path)
     engine, session_factory = create_engine_and_session_factory(Path(settings.storage.path))
@@ -106,16 +118,7 @@ def build_runtime(config_path: Path) -> RuntimeState:
     modelers_client = ModelersClient()
     gitcode_client = GitCodeClient(settings.sources.gitcode.token or "")
     scheduler = RadarScheduler(timezone=settings.app.timezone)
-    if settings.summarization.enabled:
-        report_summarizer = OpenAIReportSummarizer(
-            base_url=str(settings.summarization.base_url),
-            api_key=settings.summarization.api_key or "",
-            model=settings.summarization.model or "",
-            timeout_seconds=settings.summarization.timeout_seconds,
-            max_input_chars=settings.summarization.max_input_chars,
-        )
-    else:
-        report_summarizer = NullReportSummarizer()
+    report_summarizer = _build_report_summarizer(settings)
 
     if settings.sources.official_pages.enabled:
 
