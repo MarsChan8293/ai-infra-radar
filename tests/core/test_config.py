@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from radar.cli import cli
-from radar.core.config import load_settings
+from radar.core.config import Settings, load_settings
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -87,6 +87,94 @@ def test_validate_config_cli_command() -> None:
 
     assert result.exit_code == 0
     assert "config ok" in result.output
+
+
+def test_load_settings_accepts_summarization_block(tmp_path: Path) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+summarization:
+  enabled: true
+  base_url: https://example.com/v1
+  api_key: test-key
+  model: test-model
+  timeout_seconds: 15
+  max_input_chars: 3000
+""".strip()
+    )
+
+    settings = load_settings(config_path)
+
+    assert settings.summarization.enabled is True
+    assert str(settings.summarization.base_url) == "https://example.com/v1"
+    assert settings.summarization.model == "test-model"
+
+
+def test_load_settings_requires_provider_fields_when_summarization_enabled(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+summarization:
+  enabled: true
+""".strip()
+    )
+
+    with pytest.raises(ValueError, match="base_url"):
+        load_settings(config_path)
+
+
+def test_settings_model_validate_requires_provider_fields_when_summarization_enabled() -> None:
+    with pytest.raises(ValidationError, match="base_url"):
+        Settings.model_validate(
+            {
+                "app": {"timezone": "UTC"},
+                "storage": {"path": "./data/radar.db"},
+                "channels": {
+                    "webhook": {"enabled": False},
+                    "email": {"enabled": False},
+                },
+                "sources": {
+                    "github": {"enabled": False},
+                    "official_pages": {"enabled": False},
+                    "huggingface": {"enabled": False},
+                },
+                "summarization": {"enabled": True},
+            }
+        )
 
 
 def test_backfill_source_huggingface_runs_registered_job(

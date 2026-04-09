@@ -28,6 +28,7 @@ from radar.jobs.github_burst import run_github_burst_job
 from radar.jobs.huggingface_models import run_huggingface_models_job
 from radar.jobs.modelers_models import run_modelers_models_job
 from radar.jobs.official_pages import run_official_pages_job
+from radar.reports.summarization import NullReportSummarizer, OpenAIReportSummarizer
 from radar.sources.github.client import GitHubClient
 from radar.sources.gitcode.client import GitCodeClient
 from radar.sources.huggingface.client import HuggingFaceClient
@@ -51,6 +52,7 @@ class RuntimeState:
     modelscope_client: Any
     modelers_client: Any
     gitcode_client: Any
+    report_summarizer: Any
 
 
 def _build_channels(settings: Settings) -> dict[str, Any]:
@@ -104,6 +106,16 @@ def build_runtime(config_path: Path) -> RuntimeState:
     modelers_client = ModelersClient()
     gitcode_client = GitCodeClient(settings.sources.gitcode.token or "")
     scheduler = RadarScheduler(timezone=settings.app.timezone)
+    if settings.summarization.enabled:
+        report_summarizer = OpenAIReportSummarizer(
+            base_url=str(settings.summarization.base_url),
+            api_key=settings.summarization.api_key or "",
+            model=settings.summarization.model or "",
+            timeout_seconds=settings.summarization.timeout_seconds,
+            max_input_chars=settings.summarization.max_input_chars,
+        )
+    else:
+        report_summarizer = NullReportSummarizer()
 
     if settings.sources.official_pages.enabled:
 
@@ -298,6 +310,7 @@ def build_runtime(config_path: Path) -> RuntimeState:
         modelscope_client=modelscope_client,
         modelers_client=modelers_client,
         gitcode_client=gitcode_client,
+        report_summarizer=report_summarizer,
     )
 
 
@@ -321,6 +334,7 @@ def apply_runtime(app: FastAPI, runtime: RuntimeState) -> None:
     app.state.modelscope_client = runtime.modelscope_client
     app.state.modelers_client = runtime.modelers_client
     app.state.gitcode_client = runtime.gitcode_client
+    app.state.report_summarizer = runtime.report_summarizer
     runtime.scheduler.start()
 
 
@@ -363,4 +377,5 @@ def create_app(lifespan: Any = None) -> FastAPI:
     app.state.modelscope_client = None
     app.state.modelers_client = None
     app.state.gitcode_client = None
+    app.state.report_summarizer = None
     return app

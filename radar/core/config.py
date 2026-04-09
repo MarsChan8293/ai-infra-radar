@@ -158,13 +158,52 @@ class SourceSettings(BaseModel):
     gitcode: GitCodeSettings = GitCodeSettings(enabled=False)
 
 
+class SummarizationSettings(BaseModel):
+    model_config = _FORBID
+    enabled: bool = False
+    base_url: HttpUrl | None = None
+    api_key: str | None = None
+    model: str | None = None
+    timeout_seconds: int = 20
+    max_input_chars: int = 4000
+
+    @model_validator(mode="after")
+    def _require_provider_fields_when_enabled(self) -> "SummarizationSettings":
+        if not self.enabled:
+            return self
+        if self.base_url is None:
+            raise ValueError("base_url is required when summarization is enabled")
+        if not self.api_key:
+            raise ValueError("api_key is required when summarization is enabled")
+        if not self.model:
+            raise ValueError("model is required when summarization is enabled")
+        return self
+
+
 class Settings(BaseModel):
     model_config = _FORBID
     app: AppSettings
     storage: StorageSettings
     channels: ChannelSettings
     sources: SourceSettings
+    summarization: SummarizationSettings = SummarizationSettings()
+
+
+def _validate_summarization_block(data: dict[str, object]) -> None:
+    summarization = data.get("summarization")
+    if not isinstance(summarization, dict) or not summarization.get("enabled"):
+        return
+    if not summarization.get("base_url"):
+        raise ValueError("base_url is required when summarization is enabled")
+    if not summarization.get("api_key"):
+        raise ValueError("api_key is required when summarization is enabled")
+    if not summarization.get("model"):
+        raise ValueError("model is required when summarization is enabled")
 
 
 def load_settings(path: Path) -> Settings:
-    return Settings.model_validate(yaml.safe_load(path.read_text()))
+    data = yaml.safe_load(path.read_text())
+    if data is None:
+        data = {}
+    _validate_summarization_block(data)
+    return Settings.model_validate(data)
