@@ -141,6 +141,43 @@ def test_feed_route_does_not_require_daily_briefing_generation(repo) -> None:
     assert summarizer.briefing_calls == 0
 
 
+def test_feed_route_avoids_full_report_payload_assembly(repo, monkeypatch) -> None:
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/tool",
+        display_name="acme/tool",
+        url="https://github.com/acme/tool",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.9,
+        dedupe_key="github:burst:lightweight-feed",
+        reason={"full_name": "acme/tool", "stars": 25},
+    )
+
+    def fail_build_report_payload(*args, **kwargs):
+        raise RuntimeError("feed should not build full report payloads")
+
+    monkeypatch.setattr(
+        "radar.api.routes.feed.build_report_payload",
+        fail_build_report_payload,
+        raising=False,
+    )
+
+    app = create_app()
+    app.state.repo = repo
+    app.state.report_summarizer = NullReportSummarizer()
+    client = TestClient(app)
+
+    response = client.get("/feed.xml")
+
+    assert response.status_code == 200
+    assert "acme/tool" in response.text
+
+
 def test_feed_route_surfaces_summarizer_entry_failures(repo) -> None:
     entity = repo.upsert_entity(
         source="github",

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
 
 from radar.reports.enrichment import (
+    enrich_report_events,
     build_enriched_daily_report,
     build_filter_summary,
     build_filter_tags,
@@ -90,6 +92,24 @@ def build_report_payload(
         summarizer=report_summarizer,
         include_daily_briefing=include_daily_briefing,
     )
+
+
+def build_feed_payload(repo, day: str, *, report_summarizer) -> dict[str, Any]:
+    events = list_report_events(repo, day)
+    if not events:
+        raise HTTPException(status_code=404, detail="report not found")
+
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for event in enrich_report_events(events, summarizer=report_summarizer):
+        grouped[event["source"]].append(event)
+
+    return {
+        "date": day,
+        "topics": [
+            {"topic": topic, "count": len(items), "events": items}
+            for topic, items in sorted(grouped.items())
+        ],
+    }
 
 
 def build_feed_xml_from_reports(

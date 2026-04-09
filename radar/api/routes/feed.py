@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
-from radar.reports.builder import build_feed_xml_from_reports, build_report_payload
+from radar.reports.builder import build_feed_payload, build_feed_xml_from_reports
 from radar.reports.summarization import NullReportSummarizer
 
 router = APIRouter(tags=["feed"])
@@ -17,11 +17,10 @@ def build_feed_xml(repo, *, report_summarizer) -> str:
         )
 
     reports = [
-        build_report_payload(
+        build_feed_payload(
             repo,
             day,
             report_summarizer=report_summarizer,
-            include_daily_briefing=False,
         )
         for day in repo.list_report_days()[:7]
     ]
