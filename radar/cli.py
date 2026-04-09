@@ -96,7 +96,11 @@ def export_pages(
 ) -> None:
     runtime = build_runtime(config)
     try:
-        export_pages_site(runtime.repo, output)
+        export_pages_site(
+            runtime.repo,
+            output,
+            report_summarizer=runtime.report_summarizer,
+        )
         typer.echo(f"pages exported to {output}")
     finally:
         runtime.engine.dispose()

@@ -11,13 +11,18 @@ from radar.core.repositories import RadarRepository
 from radar.reports.summarization import NullReportSummarizer
 
 
-def _make_client(repo: RadarRepository) -> TestClient:
+def _make_client(
+    repo: RadarRepository, *, with_report_summarizer: bool = True
+) -> TestClient:
     app = create_app()
     app.state.repo = repo
     app.state.scheduler = None
     app.state.settings = None
     app.state.config_path = None
-    app.state.report_summarizer = NullReportSummarizer()
+    if with_report_summarizer:
+        app.state.report_summarizer = NullReportSummarizer()
+    elif hasattr(app.state, "report_summarizer"):
+        delattr(app.state, "report_summarizer")
     return TestClient(app)
 
 
@@ -271,3 +276,56 @@ def test_reports_date_endpoint_exposes_search_filter_and_bilingual_fields(
     assert "reason_text_en" in event
     assert "title_zh" in event
     assert body["filters"]["sources"][0]["value"] == "github"
+
+
+def test_reports_date_endpoint_falls_back_to_null_summarizer_when_state_is_missing(
+    repo: RadarRepository, monkeypatch
+) -> None:
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/tool",
+        display_name="acme/tool",
+        url="https://github.com/acme/tool",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.9,
+        dedupe_key="github:burst:fallback",
+        reason={"full_name": "acme/tool", "stars": 25},
+    )
+
+    class StubNullReportSummarizer:
+        def summarize_entry(self, entry: dict) -> dict[str, str | None]:
+            return {
+                "title_zh": "回退标题",
+                "reason_text_zh": "回退摘要",
+                "reason_text_en": "fallback summary",
+            }
+
+        def summarize_daily_briefing(
+            self, *, date: str, entries: list[dict]
+        ) -> dict[str, str | None]:
+            return {"briefing_zh": "回退日报", "briefing_en": "fallback briefing"}
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "radar.api.routes.reports.NullReportSummarizer",
+        StubNullReportSummarizer,
+    )
+    client = _make_client(repo, with_report_summarizer=False)
+    date_str = client.get("/reports/manifest").json()["dates"][0]["date"]
+
+    response = client.get(f"/reports/{date_str}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"]["briefing_zh"] == "回退日报"
+    assert body["summary"]["briefing_en"] == "fallback briefing"
+    assert body["topics"][0]["events"][0]["title_zh"] == "回退标题"
+    assert body["topics"][0]["events"][0]["reason_text_zh"] == "回退摘要"
+    assert body["topics"][0]["events"][0]["reason_text_en"] == "fallback summary"

@@ -107,8 +107,9 @@ def test_export_pages_site_uses_deduplicated_daily_report(
 
 
 def test_export_pages_cli_runs(monkeypatch, tmp_path: Path) -> None:
-    calls: list[Path] = []
+    calls: list[tuple[Path, object]] = []
     disposed: list[bool] = []
+    report_summarizer = object()
 
     class FakeEngine:
         def dispose(self) -> None:
@@ -118,12 +119,13 @@ def test_export_pages_cli_runs(monkeypatch, tmp_path: Path) -> None:
         def __init__(self) -> None:
             self.repo = object()
             self.engine = FakeEngine()
+            self.report_summarizer = report_summarizer
 
     def fake_build_runtime(path: Path) -> FakeRuntime:
         return FakeRuntime()
 
-    def fake_export(repo, output_dir: Path) -> None:
-        calls.append(output_dir)
+    def fake_export(repo, output_dir: Path, *, report_summarizer) -> None:
+        calls.append((output_dir, report_summarizer))
 
     monkeypatch.setattr("radar.cli.build_runtime", fake_build_runtime)
     monkeypatch.setattr("radar.cli.export_pages_site", fake_export)
@@ -141,7 +143,7 @@ def test_export_pages_cli_runs(monkeypatch, tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0
-    assert calls == [tmp_path / "site"]
+    assert calls == [(tmp_path / "site", report_summarizer)]
     assert disposed == [True]
     assert "pages exported to" in result.output
 
