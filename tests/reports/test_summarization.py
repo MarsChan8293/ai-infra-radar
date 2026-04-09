@@ -195,6 +195,115 @@ def test_openai_report_summarizer_raises_runtime_error_for_malformed_provider_ou
         )
 
 
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("title_zh", 123),
+        ("reason_text_zh", ["unexpected"]),
+        ("reason_text_en", {"unexpected": True}),
+    ],
+)
+@respx.mock
+def test_openai_report_summarizer_raises_runtime_error_for_invalid_entry_field_types(
+    field_name: str, field_value: object
+) -> None:
+    respx.post("https://example.com/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "title_zh": "仓库热度上升",
+                                    "reason_text_zh": "该仓库近期活跃度上升。",
+                                    "reason_text_en": "The repository saw a recent burst in activity.",
+                                    field_name: field_value,
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+    )
+
+    summarizer = OpenAIReportSummarizer(
+        base_url="https://example.com/v1",
+        api_key="test-key",
+        model="test-model",
+        timeout_seconds=20,
+        max_input_chars=4000,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=re.escape(
+            f"Malformed summarization provider output: field {field_name!r} must be a string or null."
+        ),
+    ):
+        summarizer.summarize_entry(
+            {
+                "display_name": "acme/tool",
+                "source": "github",
+                "reason": {"full_name": "acme/tool", "stars": 25},
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("briefing_zh", 123),
+        ("briefing_en", ["unexpected"]),
+    ],
+)
+@respx.mock
+def test_openai_report_summarizer_raises_runtime_error_for_invalid_daily_briefing_field_types(
+    field_name: str, field_value: object
+) -> None:
+    respx.post("https://example.com/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "briefing_zh": "今日 AI 基础设施项目整体保持活跃。",
+                                    "briefing_en": "AI infrastructure projects remained active today.",
+                                    field_name: field_value,
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+    )
+
+    summarizer = OpenAIReportSummarizer(
+        base_url="https://example.com/v1",
+        api_key="test-key",
+        model="test-model",
+        timeout_seconds=20,
+        max_input_chars=4000,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=re.escape(
+            f"Malformed summarization provider output: field {field_name!r} must be a string or null."
+        ),
+    ):
+        summarizer.summarize_daily_briefing(
+            date="2026-04-09",
+            entries=[{"display_name": "acme/tool", "source": "github", "reason": {}}],
+        )
+
+
 def test_build_runtime_uses_null_report_summarizer_when_disabled(tmp_path: Path) -> None:
     runtime = build_runtime(_write_config(tmp_path))
 

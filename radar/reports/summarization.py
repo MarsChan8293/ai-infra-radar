@@ -61,9 +61,9 @@ class OpenAIReportSummarizer:
             prompt=prompt,
         )
         return {
-            "title_zh": payload.get("title_zh"),
-            "reason_text_zh": payload.get("reason_text_zh"),
-            "reason_text_en": payload.get("reason_text_en"),
+            "title_zh": self._get_optional_string(payload, "title_zh"),
+            "reason_text_zh": self._get_optional_string(payload, "reason_text_zh"),
+            "reason_text_en": self._get_optional_string(payload, "reason_text_en"),
         }
 
     def summarize_daily_briefing(
@@ -77,8 +77,8 @@ class OpenAIReportSummarizer:
             prompt=prompt,
         )
         return {
-            "briefing_zh": payload.get("briefing_zh"),
-            "briefing_en": payload.get("briefing_en"),
+            "briefing_zh": self._get_optional_string(payload, "briefing_zh"),
+            "briefing_en": self._get_optional_string(payload, "briefing_en"),
         }
 
     def _request_json(self, *, system_prompt: str, prompt: str) -> dict[str, Any]:
@@ -106,6 +106,14 @@ class OpenAIReportSummarizer:
                 "Malformed summarization provider output: content must decode to a JSON object."
             )
         return payload
+
+    def _get_optional_string(self, payload: dict[str, Any], field_name: str) -> str | None:
+        value = payload.get(field_name)
+        if value is None or isinstance(value, str):
+            return value
+        raise RuntimeError(
+            f"Malformed summarization provider output: field {field_name!r} must be a string or null."
+        )
 
     def _extract_content(self, response_payload: Any) -> str:
         if not isinstance(response_payload, dict):
