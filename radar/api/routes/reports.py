@@ -9,6 +9,20 @@ from fastapi import APIRouter, HTTPException, Request
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
+def _event_rank(event: dict) -> tuple[float, str, int]:
+    return (event["score"], event["created_at"], event["id"])
+
+
+def _dedupe_events(events: list[dict]) -> list[dict]:
+    best_by_entity: dict[str, dict] = {}
+    for event in events:
+        key = event["canonical_name"]
+        current = best_by_entity.get(key)
+        if current is None or _event_rank(event) > _event_rank(current):
+            best_by_entity[key] = event
+    return sorted(best_by_entity.values(), key=_event_rank, reverse=True)
+
+
 def _group_events(events: list[dict]) -> list[dict]:
     grouped: dict[str, list[dict]] = defaultdict(list)
     for event in events:
@@ -22,7 +36,7 @@ def _group_events(events: list[dict]) -> list[dict]:
 def build_report_manifest(repo) -> dict:
     dates = []
     for day in repo.list_report_days():
-        events = repo.list_alerts_for_day(day)
+        events = _dedupe_events(repo.list_alerts_for_day(day))
         dates.append(
             {
                 "date": day,
@@ -34,7 +48,7 @@ def build_report_manifest(repo) -> dict:
 
 
 def build_report_payload(repo, day: str) -> dict:
-    events = repo.list_alerts_for_day(day)
+    events = _dedupe_events(repo.list_alerts_for_day(day))
     if not events:
         raise HTTPException(status_code=404, detail="report not found")
 

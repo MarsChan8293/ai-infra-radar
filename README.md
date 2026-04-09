@@ -106,6 +106,8 @@ The default homepage is the radar results browser:
 - date-first browsing of grouped report data
 - source/topic filtering inside the selected day
 - report summary plus event list
+- daily reports deduplicate repeated alerts for the same entity and keep the
+  highest-scoring entry for that day
 
 The operations console is available at:
 

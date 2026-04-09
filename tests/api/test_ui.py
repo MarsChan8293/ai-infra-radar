@@ -49,6 +49,7 @@ def test_home_script_contains_report_api_wiring() -> None:
     assert 'fetchJson(`/reports/${date}`)' in response.text
     assert "renderManifest" in response.text
     assert "renderReport" in response.text
+    assert "one entry per entity" in response.text
 
 
 def test_ops_route_returns_html_shell() -> None:

@@ -101,7 +101,7 @@ function renderEvents(report) {
 
 function renderReport(report) {
   activeReport = report;
-  document.getElementById("report-subtitle").textContent = `Showing ${report.date} grouped by source.`;
+  document.getElementById("report-subtitle").textContent = `Showing ${report.date} as one entry per entity.`;
   document.getElementById("report-summary").textContent =
     `Total alerts: ${report.summary.total_alerts}\n` +
     `Top sources: ${report.summary.top_sources.map((entry) => `${entry.source}(${entry.count})`).join(", ")}\n` +

@@ -58,6 +58,45 @@ def test_export_pages_writes_static_shell_manifest_and_daily_json(
     assert report["topics"][0]["events"][0]["display_name"] == "acme/tool"
 
 
+def test_export_pages_site_uses_deduplicated_daily_report(
+    tmp_path: Path, repo
+) -> None:
+    from radar.pages.export import export_pages_site
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/tool",
+        display_name="acme/tool",
+        url="https://github.com/acme/tool",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.4,
+        dedupe_key="github:burst:export:low",
+        reason={"full_name": "acme/tool"},
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.9,
+        dedupe_key="github:burst:export:high",
+        reason={"full_name": "acme/tool"},
+    )
+
+    export_pages_site(repo, output_dir=tmp_path)
+
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    report = json.loads((tmp_path / "reports" / f'{manifest["dates"][0]["date"]}.json').read_text())
+
+    assert manifest["dates"][0]["count"] == 1
+    assert report["summary"]["total_alerts"] == 1
+    assert report["topics"][0]["events"][0]["score"] == 0.9
+
+
 def test_export_pages_cli_runs(monkeypatch, tmp_path: Path) -> None:
     calls: list[Path] = []
     disposed: list[bool] = []
