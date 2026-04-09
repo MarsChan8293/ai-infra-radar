@@ -46,11 +46,17 @@ def test_export_pages_writes_static_shell_manifest_and_daily_json(
     assert "window.__RADAR_RESULTS_CONFIG__" in index_html
     assert "./manifest.json" in index_html
     assert "./reports" in index_html
+    assert "./feed.xml" in index_html
     assert 'href="/ops"' not in index_html
+    assert 'id="search-input"' in index_html
+    assert 'id="language-toggle"' in index_html
+    assert 'id="feed-link"' in index_html
 
     app_js = (tmp_path / "app.js").read_text()
     assert "manifestPath" in app_js
     assert "reportPath" in app_js
+    assert "window.location.hash" in app_js
+    assert "loadReportForCurrentState" in app_js
 
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     assert manifest["dates"][0]["count"] == 1

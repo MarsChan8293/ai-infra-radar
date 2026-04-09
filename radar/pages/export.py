@@ -26,7 +26,8 @@ def _build_static_index() -> str:
       window.__RADAR_RESULTS_CONFIG__ = {
         mode: "static",
         manifestPath: "./manifest.json",
-        reportBasePath: "./reports"
+        reportBasePath: "./reports",
+        feedPath: "./feed.xml"
       };
     </script>
     <script src="./app.js" defer></script>""",

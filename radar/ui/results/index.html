@@ -13,13 +13,42 @@
           <p class="eyebrow">Radar Results</p>
           <h1>AI Infra Radar</h1>
           <p id="report-subtitle">
-            Browse monitoring results by day, then narrow by source.
+            Browse daily reports with search, filters, bilingual summaries, and feed shortcuts.
           </p>
         </div>
-        <a class="ops-link" href="/ops">Open operations console</a>
+        <div class="header-actions">
+          <a id="feed-link" class="ops-link secondary-link" href="/feed.xml">Open feed</a>
+          <a class="ops-link" href="/ops">Open operations console</a>
+        </div>
       </header>
       <main class="layout">
         <aside class="sidebar">
+          <section class="sidebar-panel toolbar-panel">
+            <div class="panel-header">
+              <h2>Reader tools</h2>
+            </div>
+            <label class="search-field" for="search-input">
+              <span>Search entries</span>
+              <input
+                id="search-input"
+                type="search"
+                name="search"
+                placeholder="Search names, summaries, sources, reasons"
+                autocomplete="off"
+              />
+            </label>
+            <div class="toolbar-row">
+              <div id="language-toggle" class="segmented-control" aria-label="Language toggle">
+                <button type="button" data-language="en" class="is-active">English</button>
+                <button type="button" data-language="zh">中文</button>
+              </div>
+              <button id="clear-search" type="button" class="ghost-button">Clear</button>
+            </div>
+            <div class="toolbar-links">
+              <a id="permalink-link" href="#">Permalink</a>
+              <a id="report-json-link" href="/reports/manifest">Current report JSON</a>
+            </div>
+          </section>
           <section class="sidebar-panel">
             <div class="panel-header">
               <h2>Dates</h2>
@@ -33,10 +62,17 @@
             </div>
             <ul id="topic-list" class="nav-list"></ul>
           </section>
+          <section class="sidebar-panel">
+            <div class="panel-header">
+              <h2>Filters</h2>
+            </div>
+            <div id="filter-groups" class="filter-groups"></div>
+          </section>
         </aside>
         <section class="content">
           <article id="report-summary" class="summary-card">
-            Select a day to inspect its report summary.
+            <div id="summary-stats">Select a day to inspect its report summary.</div>
+            <section id="daily-briefing" class="briefing-card"></section>
           </article>
           <section id="report-events" class="events-list"></section>
         </section>

@@ -35,7 +35,13 @@ def test_home_shell_contains_results_browser_regions() -> None:
     assert response.status_code == 200
     assert 'id="date-list"' in response.text
     assert 'id="topic-list"' in response.text
+    assert 'id="search-input"' in response.text
+    assert 'id="filter-groups"' in response.text
+    assert 'id="language-toggle"' in response.text
+    assert 'id="feed-link"' in response.text
+    assert 'id="permalink-link"' in response.text
     assert 'id="report-summary"' in response.text
+    assert 'id="daily-briefing"' in response.text
     assert 'id="report-events"' in response.text
 
 
@@ -46,10 +52,15 @@ def test_home_script_contains_report_api_wiring() -> None:
 
     assert response.status_code == 200
     assert 'fetchJson("/reports/manifest")' in response.text
-    assert 'fetchJson(`/reports/${date}`)' in response.text
+    assert 'window.location.hash' in response.text
+    assert "URLSearchParams" in response.text
+    assert "loadReportForCurrentState" in response.text
+    assert "search-input" in response.text
+    assert "language-toggle" in response.text
+    assert "feedPath" in response.text
     assert "renderManifest" in response.text
     assert "renderReport" in response.text
-    assert "one entry per entity" in response.text
+    assert "daily briefing" in response.text.lower()
 
 
 def test_ops_route_returns_html_shell() -> None:
