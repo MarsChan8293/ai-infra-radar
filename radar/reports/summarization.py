@@ -1,9 +1,19 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
+
+
+class CloseableReportSummarizer(Protocol):
+    def summarize_entry(self, entry: dict[str, Any]) -> dict[str, str | None]: ...
+
+    def summarize_daily_briefing(
+        self, *, date: str, entries: list[dict[str, Any]]
+    ) -> dict[str, str | None]: ...
+
+    def close(self) -> None: ...
 
 
 class NullReportSummarizer:
@@ -14,6 +24,9 @@ class NullReportSummarizer:
         self, *, date: str, entries: list[dict[str, Any]]
     ) -> dict[str, str | None]:
         return {"briefing_zh": None, "briefing_en": None}
+
+    def close(self) -> None:
+        return None
 
 
 class OpenAIReportSummarizer:
@@ -81,5 +94,45 @@ class OpenAIReportSummarizer:
             },
         )
         response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
+        content = self._extract_content(response.json())
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "Malformed summarization provider output: content was not valid JSON."
+            ) from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError(
+                "Malformed summarization provider output: content must decode to a JSON object."
+            )
+        return payload
+
+    def _extract_content(self, response_payload: Any) -> str:
+        if not isinstance(response_payload, dict):
+            raise RuntimeError(
+                "Malformed summarization provider output: expected a JSON object response."
+            )
+        choices = response_payload.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise RuntimeError(
+                "Malformed summarization provider output: expected choices[0].message.content string."
+            )
+        choice = choices[0]
+        if not isinstance(choice, dict):
+            raise RuntimeError(
+                "Malformed summarization provider output: expected choices[0].message.content string."
+            )
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            raise RuntimeError(
+                "Malformed summarization provider output: expected choices[0].message.content string."
+            )
+        content = message.get("content")
+        if not isinstance(content, str):
+            raise RuntimeError(
+                "Malformed summarization provider output: expected choices[0].message.content string."
+            )
+        return content
+
+    def close(self) -> None:
+        self._client.close()

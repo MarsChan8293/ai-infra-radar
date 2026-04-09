@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 import yaml
 
-from radar.app import build_runtime
+from radar.app import RuntimeState, apply_runtime, build_runtime, create_app, shutdown_runtime
 from radar.reports.summarization import NullReportSummarizer, OpenAIReportSummarizer
 
 
@@ -109,12 +111,97 @@ def test_openai_report_summarizer_maps_response_to_entry_fields() -> None:
     }
 
 
+@respx.mock
+def test_openai_report_summarizer_maps_response_to_daily_briefing_fields() -> None:
+    respx.post("https://example.com/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "briefing_zh": "今日 AI 基础设施项目整体保持活跃。",
+                                    "briefing_en": "AI infrastructure projects remained active today.",
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+    )
+
+    summarizer = OpenAIReportSummarizer(
+        base_url="https://example.com/v1",
+        api_key="test-key",
+        model="test-model",
+        timeout_seconds=20,
+        max_input_chars=4000,
+    )
+
+    result = summarizer.summarize_daily_briefing(
+        date="2026-04-09",
+        entries=[{"display_name": "acme/tool", "source": "github", "reason": {}}],
+    )
+
+    assert result == {
+        "briefing_zh": "今日 AI 基础设施项目整体保持活跃。",
+        "briefing_en": "AI infrastructure projects remained active today.",
+    }
+
+
+@pytest.mark.parametrize(
+    ("provider_payload", "message"),
+    [
+        (
+            {"choices": []},
+            "choices[0].message.content string",
+        ),
+        (
+            {"choices": [{"message": {"content": "{not-json"}}]},
+            "content was not valid JSON",
+        ),
+        (
+            {"choices": [{"message": {"content": "[]"}}]},
+            "JSON object",
+        ),
+    ],
+)
+@respx.mock
+def test_openai_report_summarizer_raises_runtime_error_for_malformed_provider_output(
+    provider_payload: dict, message: str
+) -> None:
+    respx.post("https://example.com/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=provider_payload)
+    )
+
+    summarizer = OpenAIReportSummarizer(
+        base_url="https://example.com/v1",
+        api_key="test-key",
+        model="test-model",
+        timeout_seconds=20,
+        max_input_chars=4000,
+    )
+
+    with pytest.raises(RuntimeError, match=re.escape(message)):
+        summarizer.summarize_entry(
+            {
+                "display_name": "acme/tool",
+                "source": "github",
+                "reason": {"full_name": "acme/tool", "stars": 25},
+            }
+        )
+
+
 def test_build_runtime_uses_null_report_summarizer_when_disabled(tmp_path: Path) -> None:
     runtime = build_runtime(_write_config(tmp_path))
 
     try:
         assert isinstance(runtime.report_summarizer, NullReportSummarizer)
     finally:
+        runtime.report_summarizer.close()
         runtime.engine.dispose()
 
 
@@ -136,4 +223,96 @@ def test_build_runtime_uses_openai_report_summarizer_when_enabled(tmp_path: Path
     try:
         assert isinstance(runtime.report_summarizer, OpenAIReportSummarizer)
     finally:
+        runtime.report_summarizer.close()
         runtime.engine.dispose()
+
+
+class _FakeScheduler:
+    def __init__(self) -> None:
+        self.started = False
+        self.stopped = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
+class _FakeEngine:
+    def __init__(self) -> None:
+        self.disposed = False
+
+    def dispose(self) -> None:
+        self.disposed = True
+
+
+class _FakeSummarizer:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def summarize_entry(self, entry: dict[str, object]) -> dict[str, str | None]:
+        return {"title_zh": None, "reason_text_zh": None, "reason_text_en": None}
+
+    def summarize_daily_briefing(
+        self, *, date: str, entries: list[dict[str, object]]
+    ) -> dict[str, str | None]:
+        return {"briefing_zh": None, "briefing_en": None}
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _runtime_with(scheduler: _FakeScheduler, engine: _FakeEngine, summarizer: _FakeSummarizer) -> RuntimeState:
+    return RuntimeState(
+        settings=object(),
+        config_path=Path("radar.yaml"),
+        engine=engine,
+        repo=object(),
+        scheduler=scheduler,
+        alert_service=object(),
+        github_client=object(),
+        huggingface_client=object(),
+        modelscope_client=object(),
+        modelers_client=object(),
+        gitcode_client=object(),
+        report_summarizer=summarizer,
+    )
+
+
+def test_apply_runtime_closes_previous_report_summarizer() -> None:
+    app = create_app()
+    old_scheduler = _FakeScheduler()
+    old_engine = _FakeEngine()
+    old_summarizer = _FakeSummarizer()
+    app.state.scheduler = old_scheduler
+    app.state.engine = old_engine
+    app.state.report_summarizer = old_summarizer
+
+    new_scheduler = _FakeScheduler()
+    new_engine = _FakeEngine()
+    new_summarizer = _FakeSummarizer()
+
+    apply_runtime(app, _runtime_with(new_scheduler, new_engine, new_summarizer))
+
+    assert old_scheduler.stopped is True
+    assert old_engine.disposed is True
+    assert old_summarizer.closed is True
+    assert new_scheduler.started is True
+    assert app.state.report_summarizer is new_summarizer
+
+
+def test_shutdown_runtime_closes_report_summarizer() -> None:
+    app = create_app()
+    scheduler = _FakeScheduler()
+    engine = _FakeEngine()
+    summarizer = _FakeSummarizer()
+    app.state.scheduler = scheduler
+    app.state.engine = engine
+    app.state.report_summarizer = summarizer
+
+    shutdown_runtime(app)
+
+    assert scheduler.stopped is True
+    assert engine.disposed is True
+    assert summarizer.closed is True

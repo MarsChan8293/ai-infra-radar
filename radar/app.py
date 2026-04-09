@@ -28,7 +28,11 @@ from radar.jobs.github_burst import run_github_burst_job
 from radar.jobs.huggingface_models import run_huggingface_models_job
 from radar.jobs.modelers_models import run_modelers_models_job
 from radar.jobs.official_pages import run_official_pages_job
-from radar.reports.summarization import NullReportSummarizer, OpenAIReportSummarizer
+from radar.reports.summarization import (
+    CloseableReportSummarizer,
+    NullReportSummarizer,
+    OpenAIReportSummarizer,
+)
 from radar.sources.github.client import GitHubClient
 from radar.sources.gitcode.client import GitCodeClient
 from radar.sources.huggingface.client import HuggingFaceClient
@@ -52,7 +56,7 @@ class RuntimeState:
     modelscope_client: Any
     modelers_client: Any
     gitcode_client: Any
-    report_summarizer: Any
+    report_summarizer: CloseableReportSummarizer
 
 
 def _build_channels(settings: Settings) -> dict[str, Any]:
@@ -85,7 +89,7 @@ def _build_email_sender(settings: Settings):
     return _sender
 
 
-def _build_report_summarizer(settings: Settings) -> Any:
+def _build_report_summarizer(settings: Settings) -> CloseableReportSummarizer:
     if settings.summarization.enabled:
         return OpenAIReportSummarizer(
             base_url=str(settings.summarization.base_url),
@@ -95,6 +99,11 @@ def _build_report_summarizer(settings: Settings) -> Any:
             max_input_chars=settings.summarization.max_input_chars,
         )
     return NullReportSummarizer()
+
+
+def _close_report_summarizer(summarizer: CloseableReportSummarizer | None) -> None:
+    if summarizer is not None:
+        summarizer.close()
 
 
 def build_runtime(config_path: Path) -> RuntimeState:
@@ -326,6 +335,8 @@ def apply_runtime(app: FastAPI, runtime: RuntimeState) -> None:
     if old_engine is not None:
         old_engine.dispose()
 
+    _close_report_summarizer(getattr(app.state, "report_summarizer", None))
+
     app.state.settings = runtime.settings
     app.state.config_path = runtime.config_path
     app.state.engine = runtime.engine
@@ -348,6 +359,7 @@ def shutdown_runtime(app: FastAPI) -> None:
     engine = getattr(app.state, "engine", None)
     if engine is not None:
         engine.dispose()
+    _close_report_summarizer(getattr(app.state, "report_summarizer", None))
 
 def create_app(lifespan: Any = None) -> FastAPI:
     app = FastAPI(title="AI Infra Radar", lifespan=lifespan)
