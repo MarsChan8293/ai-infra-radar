@@ -16,6 +16,7 @@ def _run_results_app_scenario(
     extra_steps: str = "",
     mode: str = "static",
     deferred_dates: tuple[str, ...] = (),
+    defer_manifest: bool = False,
 ) -> dict[str, object]:
     node = shutil.which("node")
     assert node is not None
@@ -191,7 +192,9 @@ def _run_results_app_scenario(
         const manifest = {json.dumps(manifest)};
         const reports = {json.dumps(reports)};
         const deferredDates = new Set({json.dumps(list(deferred_dates))});
+        const deferManifest = {json.dumps(defer_manifest)};
         const fetchCounts = {{}};
+        let pendingManifestFetch = null;
         const pendingReportFetches = new Map();
 
         function queueDeferredReport(date, payload) {{
@@ -217,9 +220,24 @@ def _run_results_app_scenario(
           await Promise.resolve();
         }}
 
+        async function resolveDeferredManifest() {{
+          if (!pendingManifestFetch) {{
+            throw new Error("No deferred manifest fetch queued");
+          }}
+          const resolve = pendingManifestFetch;
+          pendingManifestFetch = null;
+          resolve(buildResponse(manifest));
+          await Promise.resolve();
+        }}
+
         async function fetch(url) {{
           fetchCounts[url] = (fetchCounts[url] || 0) + 1;
           if (url === "/reports/manifest.json" || url === "/reports/manifest") {{
+            if (deferManifest) {{
+              return new Promise((resolve) => {{
+                pendingManifestFetch = resolve;
+              }});
+            }}
             return buildResponse(manifest);
           }}
           if (url.startsWith("/reports/")) {{
@@ -242,6 +260,7 @@ def _run_results_app_scenario(
          }}
 
         window.__resolveReportFetch = resolveDeferredReport;
+        window.__resolveManifestFetch = resolveDeferredManifest;
 
         const context = {{
           window,
@@ -467,6 +486,125 @@ def test_results_app_normalizes_stale_hash_filters_when_switching_reports() -> N
     assert "is-active" in result["filters"]
     assert "No entries match the current search or filters." not in result["events"]
     assert "Vendor release notes" in result["events"]
+
+
+def test_results_app_preserves_startup_hash_change_while_manifest_is_loading() -> None:
+    manifest = {
+        "dates": [
+            {"date": "2026-04-09", "count": 1},
+            {"date": "2026-04-08", "count": 1},
+        ]
+    }
+    reports = {
+        "2026-04-09": {
+            "date": "2026-04-09",
+            "summary": {
+                "total_alerts": 1,
+                "top_sources": [{"source": "github", "count": 1}],
+                "max_score": 0.91,
+                "briefing_en": "GitHub activity stayed elevated.",
+                "briefing_zh": None,
+            },
+            "filters": {
+                "sources": [{"value": "github", "count": 1}],
+                "alert_types": [{"value": "repo_burst", "count": 1}],
+                "score_bands": [{"value": "0.8-1.0", "count": 1}],
+                "topic_tags": [{"value": "github", "count": 1}],
+            },
+            "topics": [
+                {
+                    "topic": "github",
+                    "count": 1,
+                    "events": [
+                        {
+                            "display_name": "stale-github-event",
+                            "title_zh": None,
+                            "reason_text_en": "Stale event.",
+                            "reason_text_zh": None,
+                            "reason": {"stars": 42},
+                            "score": 0.91,
+                            "source": "github",
+                            "alert_type": "repo_burst",
+                            "created_at": "2026-04-09T12:00:00Z",
+                            "url": "https://example.com/stale",
+                            "search_text": "stale github event",
+                            "filter_tags": {
+                                "source": "github",
+                                "alert_type": "repo_burst",
+                                "score_band": "0.8-1.0",
+                                "topic_tags": ["github"],
+                            },
+                        }
+                    ],
+                }
+            ],
+        },
+        "2026-04-08": {
+            "date": "2026-04-08",
+            "summary": {
+                "total_alerts": 1,
+                "top_sources": [{"source": "official_pages", "count": 1}],
+                "max_score": 0.74,
+                "briefing_en": "Official pages changed.",
+                "briefing_zh": None,
+            },
+            "filters": {
+                "sources": [{"value": "official_pages", "count": 1}],
+                "alert_types": [{"value": "page_update", "count": 1}],
+                "score_bands": [{"value": "0.6-0.8", "count": 1}],
+                "topic_tags": [{"value": "official_pages", "count": 1}],
+            },
+            "topics": [
+                {
+                    "topic": "official_pages",
+                    "count": 1,
+                    "events": [
+                        {
+                            "display_name": "fresh-official-pages-event",
+                            "title_zh": None,
+                            "reason_text_en": "Fresh event.",
+                            "reason_text_zh": None,
+                            "reason": {"url": "https://example.com/fresh"},
+                            "score": 0.74,
+                            "source": "official_pages",
+                            "alert_type": "page_update",
+                            "created_at": "2026-04-08T08:00:00Z",
+                            "url": "https://example.com/fresh",
+                            "search_text": "fresh official pages event",
+                            "filter_tags": {
+                                "source": "official_pages",
+                                "alert_type": "page_update",
+                                "score_band": "0.6-0.8",
+                                "topic_tags": ["official_pages"],
+                            },
+                        }
+                    ],
+                }
+            ],
+        },
+    }
+
+    result = _run_results_app_scenario(
+        hash_value="#date=2026-04-09",
+        manifest=manifest,
+        reports=reports,
+        defer_manifest=True,
+        extra_steps=textwrap.dedent(
+            """
+            window.location.hash = "#date=2026-04-08";
+            window.dispatchEvent({ type: "hashchange" });
+            await flush();
+            await window.__resolveManifestFetch();
+            await flush();
+            """
+        ),
+    )
+
+    assert result["hash"] == "#date=2026-04-08"
+    assert result["status"] == "Loaded 2026-04-08"
+    assert "2026-04-08" in result["summary"]
+    assert "fresh-official-pages-event" in result["events"]
+    assert "stale-github-event" not in result["events"]
 
 
 def test_results_app_refetches_live_reports_but_reuses_static_cache() -> None:

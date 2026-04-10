@@ -129,7 +129,6 @@ function syncHashFromState() {
 
 function normalizeStateForManifest() {
   if (!state.manifest.dates.length) {
-    state.activeDate = null;
     return;
   }
   const availableDates = new Set(state.manifest.dates.map((entry) => entry.date));
