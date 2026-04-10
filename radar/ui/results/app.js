@@ -33,6 +33,7 @@ const state = {
 };
 
 let isUpdatingHash = false;
+let latestReportRequestId = 0;
 
 function getResultsConfig() {
   const config = window.__RADAR_RESULTS_CONFIG__ || {};
@@ -541,22 +542,31 @@ async function loadReportForCurrentState() {
     return;
   }
 
-  setStatus(`Loading ${state.activeDate}...`);
+  const requestDate = state.activeDate;
+  const requestId = ++latestReportRequestId;
+
+  setStatus(`Loading ${requestDate}...`);
   updateToolbarUi();
   renderManifest(state.manifest);
 
   try {
-    const report = await fetchReport(state.activeDate);
+    const report = await fetchReport(requestDate);
+    if (requestId !== latestReportRequestId) {
+      return;
+    }
     renderReport(report);
-    setStatus(`Loaded ${state.activeDate}`);
+    setStatus(`Loaded ${requestDate}`);
   } catch (error) {
+    if (requestId !== latestReportRequestId) {
+      return;
+    }
     state.activeReport = null;
     document.getElementById("summary-stats").textContent = `Failed to load report: ${error.message}`;
     document.getElementById("daily-briefing").innerHTML = "";
     document.getElementById("report-events").innerHTML = "";
     document.getElementById("topic-list").innerHTML = "";
     document.getElementById("filter-groups").innerHTML = "";
-    setStatus(`Failed to load ${state.activeDate}`);
+    setStatus(`Failed to load ${requestDate}`);
   }
 }
 
