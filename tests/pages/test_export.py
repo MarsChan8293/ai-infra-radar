@@ -4,8 +4,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
+from radar.app import create_app
 from radar.cli import cli
 from radar.reports.summarization import NullReportSummarizer
 
@@ -111,6 +113,62 @@ def test_export_pages_site_uses_deduplicated_daily_report(
     assert manifest["dates"][0]["count"] == 1
     assert report["summary"]["total_alerts"] == 1
     assert report["topics"][0]["events"][0]["score"] == 0.9
+
+
+def test_export_manifest_matches_live_manifest_briefing_availability(
+    tmp_path: Path, repo
+) -> None:
+    from radar.pages.export import export_pages_site
+
+    class BriefingSummarizer:
+        def summarize_entry(self, entry: dict[str, object]) -> dict[str, str | None]:
+            return {
+                "title_zh": None,
+                "reason_text_zh": None,
+                "reason_text_en": None,
+            }
+
+        def summarize_daily_briefing(
+            self, *, date: str, entries: list[dict[str, object]]
+        ) -> dict[str, str | None]:
+            return {"briefing_zh": f"{date} zh", "briefing_en": f"{date} en"}
+
+        def close(self) -> None:
+            return None
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/tool",
+        display_name="acme/tool",
+        url="https://github.com/acme/tool",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.8,
+        dedupe_key="github:burst:parity",
+        reason={"full_name": "acme/tool"},
+    )
+
+    app = create_app()
+    app.state.repo = repo
+    app.state.scheduler = None
+    app.state.settings = None
+    app.state.config_path = None
+    app.state.report_summarizer = BriefingSummarizer()
+    live_manifest = TestClient(app).get("/reports/manifest").json()
+
+    export_pages_site(repo, output_dir=tmp_path, report_summarizer=BriefingSummarizer())
+
+    static_manifest = json.loads((tmp_path / "manifest.json").read_text())
+
+    assert static_manifest["dates"][0]["briefing_available"] is False
+    assert (
+        static_manifest["dates"][0]["briefing_available"]
+        == live_manifest["dates"][0]["briefing_available"]
+    )
 
 
 def test_export_pages_cli_runs(monkeypatch, tmp_path: Path) -> None:

@@ -32,6 +32,22 @@ def list_report_events(repo, day: str) -> list[dict[str, Any]]:
     return dedupe_events(repo.list_alerts_for_day(day))
 
 
+def _build_manifest_date_entry(
+    *,
+    day: str,
+    count: int,
+    topics: list[str],
+    filter_counts: dict[str, int],
+) -> dict[str, Any]:
+    return {
+        "date": day,
+        "count": count,
+        "topics": topics,
+        "filter_counts": filter_counts,
+        "briefing_available": False,
+    }
+
+
 def build_report_manifest(repo) -> dict[str, Any]:
     dates = []
     for day in repo.list_report_days():
@@ -43,13 +59,12 @@ def build_report_manifest(repo) -> dict[str, Any]:
             ).items()
         }
         dates.append(
-            {
-                "date": day,
-                "count": len(events),
-                "topics": sorted({event["source"] for event in events}),
-                "filter_counts": filter_counts,
-                "briefing_available": False,
-            }
+            _build_manifest_date_entry(
+                day=day,
+                count=len(events),
+                topics=sorted({event["source"] for event in events}),
+                filter_counts=filter_counts,
+            )
         )
     return {"generated_at": datetime.now(timezone.utc).isoformat(), "dates": dates}
 
@@ -58,19 +73,15 @@ def build_report_manifest_from_reports(reports: list[dict[str, Any]]) -> dict[st
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "dates": [
-            {
-                "date": report["date"],
-                "count": report.get("summary", {}).get("total_alerts", 0),
-                "topics": sorted(topic["topic"] for topic in report["topics"]),
-                "filter_counts": {
+            _build_manifest_date_entry(
+                day=report["date"],
+                count=report.get("summary", {}).get("total_alerts", 0),
+                topics=sorted(topic["topic"] for topic in report["topics"]),
+                filter_counts={
                     key: len(values)
                     for key, values in report.get("filters", {}).items()
                 },
-                "briefing_available": bool(
-                    report.get("summary", {}).get("briefing_zh")
-                    or report.get("summary", {}).get("briefing_en")
-                ),
-            }
+            )
             for report in reports
         ],
     }
