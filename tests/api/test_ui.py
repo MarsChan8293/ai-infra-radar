@@ -14,7 +14,8 @@ def _run_results_app_scenario(
     manifest: dict,
     reports: dict[str, dict],
     extra_steps: str = "",
-) -> dict[str, str]:
+    mode: str = "static",
+) -> dict[str, object]:
     node = shutil.which("node")
     assert node is not None
 
@@ -150,12 +151,13 @@ def _run_results_app_scenario(
         }});
 
         const windowListeners = {{}};
+        const mode = {json.dumps(mode)};
         const window = {{
           document,
           location,
           __RADAR_RESULTS_CONFIG__: {{
-            mode: "static",
-            manifestPath: "/reports/manifest.json",
+            mode,
+            manifestPath: mode === "static" ? "/reports/manifest.json" : "/reports/manifest",
             reportBasePath: "/reports",
             feedPath: "/feed.xml",
           }},
@@ -187,13 +189,20 @@ def _run_results_app_scenario(
 
         const manifest = {json.dumps(manifest)};
         const reports = {json.dumps(reports)};
+        const fetchCounts = {{}};
         async function fetch(url) {{
-          if (url === "/reports/manifest.json") {{
+          fetchCounts[url] = (fetchCounts[url] || 0) + 1;
+          if (url === "/reports/manifest.json" || url === "/reports/manifest") {{
             return buildResponse(manifest);
           }}
-          if (url.startsWith("/reports/") && url.endsWith(".json")) {{
+          if (url.startsWith("/reports/")) {{
             const date = url.replace("/reports/", "").replace(".json", "");
-            return buildResponse(reports[date]);
+            const reportPayload = reports[date];
+            if (Array.isArray(reportPayload)) {{
+              const fetchIndex = fetchCounts[url] - 1;
+              return buildResponse(reportPayload[Math.min(fetchIndex, reportPayload.length - 1)]);
+            }}
+            return buildResponse(reportPayload);
           }}
           throw new Error(`Unexpected fetch ${{url}}`);
         }}
@@ -228,6 +237,7 @@ def _run_results_app_scenario(
             summary: document.getElementById("summary-stats").innerHTML,
             filters: document.getElementById("filter-groups").innerHTML,
             events: document.getElementById("report-events").innerHTML,
+            fetchCounts,
           }}));
         }}
 
@@ -420,6 +430,180 @@ def test_results_app_normalizes_stale_hash_filters_when_switching_reports() -> N
     assert "is-active" in result["filters"]
     assert "No entries match the current search or filters." not in result["events"]
     assert "Vendor release notes" in result["events"]
+
+
+def test_results_app_refetches_live_reports_but_reuses_static_cache() -> None:
+    manifest = {
+        "dates": [
+            {"date": "2026-04-09", "count": 1},
+            {"date": "2026-04-08", "count": 1},
+        ]
+    }
+    reports = {
+        "2026-04-09": [
+            {
+                "date": "2026-04-09",
+                "summary": {
+                    "total_alerts": 1,
+                    "top_sources": [{"source": "github", "count": 1}],
+                    "max_score": 0.91,
+                    "briefing_en": "Initial live briefing.",
+                    "briefing_zh": None,
+                },
+                "filters": {
+                    "sources": [{"value": "github", "count": 1}],
+                    "alert_types": [{"value": "repo_burst", "count": 1}],
+                    "score_bands": [{"value": "0.8-1.0", "count": 1}],
+                    "topic_tags": [{"value": "github", "count": 1}],
+                },
+                "topics": [
+                    {
+                        "topic": "github",
+                        "count": 1,
+                        "events": [
+                            {
+                                "display_name": "live-report-initial",
+                                "title_zh": None,
+                                "reason_text_en": "Initial live event.",
+                                "reason_text_zh": None,
+                                "reason": {"stars": 42},
+                                "score": 0.91,
+                                "source": "github",
+                                "alert_type": "repo_burst",
+                                "created_at": "2026-04-09T12:00:00Z",
+                                "url": "https://example.com/live-initial",
+                                "search_text": "live report initial",
+                                "filter_tags": {
+                                    "source": "github",
+                                    "alert_type": "repo_burst",
+                                    "score_band": "0.8-1.0",
+                                    "topic_tags": ["github"],
+                                },
+                            }
+                        ],
+                    }
+                ],
+            },
+            {
+                "date": "2026-04-09",
+                "summary": {
+                    "total_alerts": 1,
+                    "top_sources": [{"source": "github", "count": 1}],
+                    "max_score": 0.97,
+                    "briefing_en": "Refetched live briefing.",
+                    "briefing_zh": None,
+                },
+                "filters": {
+                    "sources": [{"value": "github", "count": 1}],
+                    "alert_types": [{"value": "repo_burst", "count": 1}],
+                    "score_bands": [{"value": "0.8-1.0", "count": 1}],
+                    "topic_tags": [{"value": "github", "count": 1}],
+                },
+                "topics": [
+                    {
+                        "topic": "github",
+                        "count": 1,
+                        "events": [
+                            {
+                                "display_name": "live-report-refetched",
+                                "title_zh": None,
+                                "reason_text_en": "Refetched live event.",
+                                "reason_text_zh": None,
+                                "reason": {"stars": 108},
+                                "score": 0.97,
+                                "source": "github",
+                                "alert_type": "repo_burst",
+                                "created_at": "2026-04-09T13:00:00Z",
+                                "url": "https://example.com/live-refetched",
+                                "search_text": "live report refetched",
+                                "filter_tags": {
+                                    "source": "github",
+                                    "alert_type": "repo_burst",
+                                    "score_band": "0.8-1.0",
+                                    "topic_tags": ["github"],
+                                },
+                            }
+                        ],
+                    }
+                ],
+            },
+        ],
+        "2026-04-08": {
+            "date": "2026-04-08",
+            "summary": {
+                "total_alerts": 1,
+                "top_sources": [{"source": "official_pages", "count": 1}],
+                "max_score": 0.74,
+                "briefing_en": "Static comparison report.",
+                "briefing_zh": None,
+            },
+            "filters": {
+                "sources": [{"value": "official_pages", "count": 1}],
+                "alert_types": [{"value": "page_update", "count": 1}],
+                "score_bands": [{"value": "0.6-0.8", "count": 1}],
+                "topic_tags": [{"value": "official_pages", "count": 1}],
+            },
+            "topics": [
+                {
+                    "topic": "official_pages",
+                    "count": 1,
+                    "events": [
+                        {
+                            "display_name": "comparison-report",
+                            "title_zh": None,
+                            "reason_text_en": "Comparison event.",
+                            "reason_text_zh": None,
+                            "reason": {"url": "https://example.com/comparison"},
+                            "score": 0.74,
+                            "source": "official_pages",
+                            "alert_type": "page_update",
+                            "created_at": "2026-04-08T08:00:00Z",
+                            "url": "https://example.com/comparison",
+                            "search_text": "comparison report event",
+                            "filter_tags": {
+                                "source": "official_pages",
+                                "alert_type": "page_update",
+                                "score_band": "0.6-0.8",
+                                "topic_tags": ["official_pages"],
+                            },
+                        }
+                    ],
+                }
+            ],
+        },
+    }
+    extra_steps = textwrap.dedent(
+        """
+        window.location.hash = "#date=2026-04-08";
+        window.dispatchEvent({ type: "hashchange" });
+        await flush();
+        window.location.hash = "#date=2026-04-09";
+        window.dispatchEvent({ type: "hashchange" });
+        await flush();
+        """
+    )
+
+    live_result = _run_results_app_scenario(
+        hash_value="#date=2026-04-09",
+        manifest=manifest,
+        reports=reports,
+        extra_steps=extra_steps,
+        mode="live",
+    )
+
+    assert live_result["fetchCounts"]["/reports/2026-04-09"] == 2
+    assert "live-report-refetched" in live_result["events"]
+
+    static_result = _run_results_app_scenario(
+        hash_value="#date=2026-04-09",
+        manifest=manifest,
+        reports=reports,
+        extra_steps=extra_steps,
+        mode="static",
+    )
+
+    assert static_result["fetchCounts"]["/reports/2026-04-09.json"] == 1
+    assert "live-report-initial" in static_result["events"]
 
 
 def test_ops_route_returns_html_shell() -> None:

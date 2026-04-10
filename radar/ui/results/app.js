@@ -36,13 +36,15 @@ let isUpdatingHash = false;
 
 function getResultsConfig() {
   const config = window.__RADAR_RESULTS_CONFIG__ || {};
+  const mode = config.mode === "static" ? "static" : "live";
   const manifestPath = config.manifestPath || "/reports/manifest";
   const reportBasePath = config.reportBasePath || "/reports";
   return {
+    mode,
     manifestPath,
     feedPath: config.feedPath || "/feed.xml",
     reportPath(date) {
-      return config.mode === "static"
+      return mode === "static"
         ? `${reportBasePath}/${date}.json`
         : `${reportBasePath}/${date}`;
     },
@@ -516,16 +518,21 @@ function renderCurrentReport() {
 }
 
 async function fetchReport(date) {
-  if (state.reportCache.has(date)) {
+  const config = getResultsConfig();
+  const shouldCache = config.mode === "static";
+  if (shouldCache && state.reportCache.has(date)) {
     return state.reportCache.get(date);
   }
 
-  const config = getResultsConfig();
   const report =
     config.manifestPath === "/reports/manifest"
       ? await fetchJson(`/reports/${date}`)
       : await fetchJson(config.reportPath(date));
-  state.reportCache.set(date, report);
+  if (shouldCache) {
+    state.reportCache.set(date, report);
+  } else {
+    state.reportCache.delete(date);
+  }
   return report;
 }
 
