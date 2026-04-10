@@ -101,13 +101,16 @@ Then visit:
 http://127.0.0.1:8000/
 ```
 
-The default homepage is the radar results browser:
+The default homepage is an enriched daily report reader with:
 
-- date-first browsing of grouped report data
-- source/topic filtering inside the selected day
-- report summary plus event list
-- daily reports deduplicate repeated alerts for the same entity and keep the
-  highest-scoring entry for that day
+- date archive navigation across exported daily reports
+- local full-text search over the loaded day's entries
+- coarse result filters for source, alert type, score band, and tags
+- bilingual entry descriptions, including Chinese summaries when available
+- a daily Chinese briefing when summarization is enabled
+- RSS/feed entry points for the current archive
+- daily reports that deduplicate repeated alerts for the same entity and keep
+  the highest-scoring entry for that day
 
 The operations console is available at:
 
@@ -123,7 +126,7 @@ The operations console includes:
 
 ## GitHub Pages
 
-Export the radar results browser as a static site:
+Export the enriched reader as a static site:
 
 ```bash
 python3 -m radar.cli export-pages --config config/radar.yaml --output site
@@ -136,11 +139,32 @@ The exporter writes a GitHub Pages-friendly archive with:
 - `styles.css`
 - `manifest.json`
 - `reports/YYYY-MM-DD.json`
+- `feed.xml`
+
+The exported shell rewrites asset/report URLs to relative paths so the same
+reader works on GitHub Pages, keeps the date archive browseable offline, and
+preserves any existing historical `reports/*.json` files already present in the
+output directory before writing the refreshed manifest, daily reports, and feed.
 
 The repository workflow supports both **scheduled publishing** and **manual
 workflow dispatch**. Configure a `RADAR_CONFIG_YAML` repository secret so the
 workflow can build runtime settings, collect current source data, preserve the
 existing static archive, and deploy the refreshed site to GitHub Pages.
+
+## Summarization
+
+Summarization is optional. When enabled, the report builder requests bilingual
+entry descriptions and a daily Chinese briefing from an OpenAI-compatible API.
+
+```yaml
+summarization:
+  enabled: true
+  base_url: https://api.openai.com/v1
+  api_key: your-api-key
+  model: gpt-4.1-mini
+  timeout_seconds: 20      # optional
+  max_input_chars: 4000    # optional
+```
 
 ## MVP paths
 
