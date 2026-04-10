@@ -140,6 +140,17 @@ function normalizeStateForReport(report) {
   if (state.activeTopic !== "all" && !topicValues.has(state.activeTopic)) {
     state.activeTopic = "all";
   }
+
+  for (const group of FILTER_GROUPS) {
+    const selectedValue = state.filters[group.stateKey];
+    if (!selectedValue || selectedValue === "all") {
+      continue;
+    }
+    const availableValues = new Set((report.filters?.[group.id] || []).map((option) => option.value));
+    if (!availableValues.has(selectedValue)) {
+      state.filters[group.stateKey] = "all";
+    }
+  }
 }
 
 function getAllEvents(report) {
