@@ -108,7 +108,7 @@ The default homepage is an enriched daily report reader with:
 - coarse result filters for source, alert type, score band, and tags
 - bilingual entry descriptions, including Chinese summaries when available
 - a daily Chinese briefing when summarization is enabled
-- RSS/feed entry points for the current archive
+- RSS/feed entry points covering the most recent seven report days
 - daily reports that deduplicate repeated alerts for the same entity and keep
   the highest-scoring entry for that day
 
@@ -139,12 +139,13 @@ The exporter writes a GitHub Pages-friendly archive with:
 - `styles.css`
 - `manifest.json`
 - `reports/YYYY-MM-DD.json`
-- `feed.xml`
+- `feed.xml` (RSS for the latest seven report days)
 
 The exported shell rewrites asset/report URLs to relative paths so the same
 reader works on GitHub Pages, keeps the date archive browseable offline, and
 preserves any existing historical `reports/*.json` files already present in the
-output directory before writing the refreshed manifest, daily reports, and feed.
+output directory while refreshing the manifest, current daily reports, and the
+latest seven-day feed window.
 
 The repository workflow supports both **scheduled publishing** and **manual
 workflow dispatch**. Configure a `RADAR_CONFIG_YAML` repository secret so the
