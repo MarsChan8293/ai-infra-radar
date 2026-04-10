@@ -411,9 +411,10 @@ def test_export_pages_feed_matches_live_seven_day_window(
     assert "acme/tool-9" in exported_feed
 
 
-def test_export_pages_feed_includes_preserved_reports_within_window(
+def test_export_pages_feed_matches_live_feed_when_preserved_reports_exist(
     tmp_path: Path, repo
 ) -> None:
+    from radar.api.routes.feed import build_feed_xml
     from radar.pages.export import export_pages_site
 
     preserved_date = "2026-04-08"
@@ -503,9 +504,11 @@ def test_export_pages_feed_includes_preserved_reports_within_window(
     )
 
     exported_feed = (tmp_path / "feed.xml").read_text()
+    live_feed = build_feed_xml(repo, report_summarizer=NullReportSummarizer())
 
+    assert exported_feed == live_feed
     assert "acme/current" in exported_feed
-    assert "acme/preserved" in exported_feed
+    assert "acme/preserved" not in exported_feed
 
 
 def test_readme_mentions_github_pages_export() -> None:

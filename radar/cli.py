@@ -48,6 +48,9 @@ def run_job(
         runtime.scheduler.run(job_name)
         typer.echo(f"{job_name}: executed")
     finally:
+        summarizer = getattr(runtime, "report_summarizer", None)
+        if summarizer is not None:
+            summarizer.close()
         runtime.engine.dispose()
 
 

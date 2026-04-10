@@ -84,4 +84,4 @@ def export_pages_site(repository, output_dir: Path, *, report_summarizer=None) -
         (reports_dir / f'{report["date"]}.json').write_text(
             json.dumps(report, indent=2) + "\n"
         )
-    (output_dir / "feed.xml").write_text(build_feed_xml_from_reports(ordered_reports))
+    (output_dir / "feed.xml").write_text(build_feed_xml_from_reports(reports))

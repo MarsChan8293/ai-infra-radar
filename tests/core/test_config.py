@@ -354,6 +354,51 @@ def test_backfill_source_gitcode_runs_registered_job(
     assert "gitcode_repos: executed" in result.output
 
 
+def test_run_job_closes_report_summarizer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text((FIXTURES_DIR / "minimal.yaml").read_text())
+    executed_jobs: list[str] = []
+    closed: list[bool] = []
+    disposed: list[bool] = []
+
+    class FakeScheduler:
+        def known_jobs(self) -> list[str]:
+            return ["github_burst"]
+
+        def run(self, job_name: str) -> bool:
+            executed_jobs.append(job_name)
+            return True
+
+    class FakeSummarizer:
+        def close(self) -> None:
+            closed.append(True)
+
+    class FakeEngine:
+        def dispose(self) -> None:
+            disposed.append(True)
+
+    class FakeRuntime:
+        scheduler = FakeScheduler()
+        engine = FakeEngine()
+        report_summarizer = FakeSummarizer()
+
+    monkeypatch.setattr("radar.cli.build_runtime", lambda path: FakeRuntime())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["run-job", "github_burst", "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0
+    assert executed_jobs == ["github_burst"]
+    assert closed == [True]
+    assert disposed == [True]
+    assert "github_burst: executed" in result.output
+
+
 # --- TDD: unknown keys must be rejected ---
 
 def test_unknown_top_level_key_raises(tmp_path: Path) -> None:
