@@ -351,6 +351,7 @@ def apply_runtime(app: FastAPI, runtime: RuntimeState) -> None:
     app.state.modelers_client = runtime.modelers_client
     app.state.gitcode_client = runtime.gitcode_client
     app.state.report_summarizer = runtime.report_summarizer
+    app.state.github_readme_ai_filter = runtime.github_readme_ai_filter
     runtime.scheduler.start()
 
 
@@ -396,4 +397,5 @@ def create_app(lifespan: Any = None) -> FastAPI:
     app.state.modelers_client = None
     app.state.gitcode_client = None
     app.state.report_summarizer = NullReportSummarizer()
+    app.state.github_readme_ai_filter = None
     return app

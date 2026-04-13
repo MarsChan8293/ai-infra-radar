@@ -314,6 +314,16 @@ def test_build_runtime_uses_null_report_summarizer_when_disabled(tmp_path: Path)
         runtime.engine.dispose()
 
 
+def test_build_runtime_defaults_github_readme_ai_filter_to_none(tmp_path: Path) -> None:
+    runtime = build_runtime(_write_config(tmp_path))
+
+    try:
+        assert runtime.github_readme_ai_filter is None
+    finally:
+        runtime.report_summarizer.close()
+        runtime.engine.dispose()
+
+
 def test_build_runtime_uses_openai_report_summarizer_when_enabled(tmp_path: Path) -> None:
     runtime = build_runtime(
         _write_config(
@@ -411,6 +421,17 @@ def test_apply_runtime_closes_previous_report_summarizer() -> None:
     assert app.state.report_summarizer is new_summarizer
 
 
+def test_apply_runtime_sets_github_readme_ai_filter_on_app_state() -> None:
+    app = create_app()
+    runtime = _runtime_with(_FakeScheduler(), _FakeEngine(), _FakeSummarizer())
+    github_readme_ai_filter = object()
+    runtime.github_readme_ai_filter = github_readme_ai_filter
+
+    apply_runtime(app, runtime)
+
+    assert app.state.github_readme_ai_filter is github_readme_ai_filter
+
+
 def test_shutdown_runtime_closes_report_summarizer() -> None:
     app = create_app()
     scheduler = _FakeScheduler()
@@ -425,3 +446,9 @@ def test_shutdown_runtime_closes_report_summarizer() -> None:
     assert scheduler.stopped is True
     assert engine.disposed is True
     assert summarizer.closed is True
+
+
+def test_create_app_defaults_github_readme_ai_filter_to_none() -> None:
+    app = create_app()
+
+    assert app.state.github_readme_ai_filter is None
