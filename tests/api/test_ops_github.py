@@ -250,28 +250,83 @@ def test_manual_fetch_rejects_invalid_date_range() -> None:
     assert "end_date" in response.text
 
 
-@pytest.mark.parametrize(
-    ("field_name", "field_value"),
-    [("query", "   "), ("readme_prompt", "   ")],
-)
-def test_manual_fetch_rejects_blank_required_fields(field_name: str, field_value: str) -> None:
+def test_manual_fetch_rejects_blank_query() -> None:
     client = _make_client(
         github_client=_FakeGitHubClient([], {}),
         github_readme_ai_filter=_FakeReadmeAIFilter({}),
     )
 
-    payload = {
-        "start_date": "2026-04-01",
-        "end_date": "2026-04-10",
-        "query": '"speculative decoding"',
-        "readme_prompt": "Decide if this repository is relevant to inference systems.",
-    }
-    payload[field_name] = field_value
-
-    response = client.post("/ops/github/manual-fetch", json=payload)
+    response = client.post(
+        "/ops/github/manual-fetch",
+        json={
+            "start_date": "2026-04-01",
+            "end_date": "2026-04-10",
+            "query": "   ",
+            "readme_prompt": "Decide if this repository is relevant to inference systems.",
+        },
+    )
 
     assert response.status_code == 422
-    assert field_name in response.text
+    assert "query" in response.text
+
+
+def test_manual_fetch_blank_prompt_falls_back_to_default_prompt() -> None:
+    github_client = _FakeGitHubClient(
+        [
+            {
+                "full_name": "acme/serve-fast",
+                "name": "serve-fast",
+                "owner": {"login": "acme"},
+                "html_url": "https://github.com/acme/serve-fast",
+                "description": "High-throughput inference server",
+                "stargazers_count": 120,
+                "forks_count": 17,
+                "language": "Python",
+                "topics": ["inference", "serving"],
+                "created_at": "2026-04-03T00:00:00Z",
+                "updated_at": "2026-04-10T00:00:00Z",
+                "pushed_at": "2026-04-10T00:00:00Z",
+                "default_branch": "main",
+            }
+        ],
+        readmes={"acme/serve-fast": "README serving and throughput details"},
+    )
+    ai_filter = _FakeReadmeAIFilter(
+        {
+            "acme/serve-fast": {
+                "keep": True,
+                "reason_zh": "README 明确描述了推理服务能力。",
+                "matched_signals": ["serving", "throughput"],
+            }
+        }
+    )
+    default_prompt = "Use the configured default README prompt."
+    client = _make_client(
+        github_client=github_client,
+        github_readme_ai_filter=ai_filter,
+        default_prompt=default_prompt,
+    )
+
+    response = client.post(
+        "/ops/github/manual-fetch",
+        json={
+            "start_date": "2026-04-01",
+            "end_date": "2026-04-10",
+            "query": '"speculative decoding"',
+            "readme_prompt": "   ",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["request"]["readme_prompt"] == default_prompt
+    assert ai_filter.calls == [
+        {
+            "full_name": "acme/serve-fast",
+            "readme_text": "README serving and throughput details",
+            "prompt": default_prompt,
+        }
+    ]
 
 
 

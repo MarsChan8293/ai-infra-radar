@@ -41,7 +41,7 @@ class ManualGitHubFetchRequest(BaseModel):
     query: str
     readme_prompt: str
 
-    @field_validator("query", "readme_prompt")
+    @field_validator("query")
     @classmethod
     def _require_non_blank_text(cls, value: str) -> str:
         stripped = value.strip()
@@ -74,6 +74,8 @@ def manual_fetch_github(
             detail="README AI filtering is unavailable because the runtime dependency is not configured.",
         )
 
+    readme_prompt = _resolve_readme_prompt(payload, request)
+
     expanded_query = build_created_range_query(
         payload.query,
         start_date=payload.start_date.isoformat(),
@@ -105,7 +107,7 @@ def manual_fetch_github(
         try:
             second_pass = apply_readme_ai_second_pass(
                 candidate,
-                prompt=payload.readme_prompt,
+                prompt=readme_prompt,
                 readme_ai_filter=readme_ai_filter,
             )
         except Exception as exc:
@@ -128,7 +130,7 @@ def manual_fetch_github(
             "query": expanded_query,
             "start_date": payload.start_date.isoformat(),
             "end_date": payload.end_date.isoformat(),
-            "readme_prompt": payload.readme_prompt,
+            "readme_prompt": readme_prompt,
         },
         "summary": {
             "coarse_count": len(candidates),
@@ -144,6 +146,34 @@ def manual_fetch_github(
         "secondary_results": secondary_results,
         "errors": errors,
     }
+
+
+def _resolve_readme_prompt(payload: ManualGitHubFetchRequest, request: Request) -> str:
+    readme_prompt = payload.readme_prompt.strip()
+    if readme_prompt:
+        return readme_prompt
+
+    default_prompt = (
+        getattr(
+            getattr(
+                getattr(getattr(request.app.state, "settings", None), "sources", None),
+                "github",
+                None,
+            ),
+            "ai_readme_filter",
+            None,
+        )
+    )
+    configured_prompt = getattr(default_prompt, "default_prompt", None)
+    if isinstance(configured_prompt, str):
+        configured_prompt = configured_prompt.strip()
+        if configured_prompt:
+            return configured_prompt
+
+    raise HTTPException(
+        status_code=503,
+        detail="README AI filtering is unavailable because the default prompt is not configured.",
+    )
 
 
 def _serialize_coarse_result(candidate: dict[str, Any]) -> dict[str, Any]:
