@@ -1,6 +1,7 @@
 """Manual GitHub ops API routes."""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import yaml
@@ -10,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 from radar.core.config import GitHubSettings
 from radar.sources.github.client import expand_query_date_placeholders
 from radar.sources.github.manual_fetch import collect_readme_candidates
+from radar.sources.github.pipeline import readme_matches_keywords
 from radar.sources.github.readme_ai_filter import apply_readme_ai_second_pass
 
 router = APIRouter(prefix="/ops/github", tags=["ops-github"])
@@ -67,12 +69,27 @@ def manual_fetch_github(
     github_settings = _load_manual_github_settings(payload.github_config_yaml)
     readme_prompt = _resolve_readme_prompt(github_settings, request)
 
-    expanded_query = expand_query_date_placeholders(github_settings.queries[0])
-    search_items = github_client.search_repositories(expanded_query)
+    expanded_queries = [
+        expand_query_date_placeholders(query) for query in github_settings.queries
+    ]
+    search_items: list[dict[str, Any]] = []
+    for expanded_query in expanded_queries:
+        search_items.extend(github_client.search_repositories(expanded_query))
     candidates = collect_readme_candidates(
         search_items,
         fetch_readme_text=github_client.fetch_readme_text,
     )
+    filtered_candidates = candidates
+    if github_settings.readme_filter.enabled:
+        filtered_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate["readme_status"] == "ok"
+            and readme_matches_keywords(
+                candidate.get("readme_text"),
+                github_settings.readme_filter.require_any,
+            )
+        ]
 
     errors: list[dict[str, str]] = []
     secondary_results: list[dict[str, Any]] = []
@@ -82,6 +99,8 @@ def manual_fetch_github(
             error = _build_readme_fetch_error(candidate)
             if error is not None:
                 errors.append(error)
+    for candidate in filtered_candidates:
+        if candidate["readme_status"] != "ok":
             continue
 
         try:
@@ -107,7 +126,7 @@ def manual_fetch_github(
 
     return {
         "request": {
-            "queries": [expanded_query],
+            "queries": expanded_queries,
             "burst_threshold": github_settings.burst_threshold,
             "readme_prompt": readme_prompt,
         },
@@ -149,7 +168,7 @@ def _load_manual_github_settings(yaml_text: str) -> GitHubSettings:
             }
         )
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+        raise HTTPException(status_code=422, detail=json.loads(exc.json())) from exc
 
 
 def _resolve_readme_prompt(github_settings: GitHubSettings, request: Request) -> str:

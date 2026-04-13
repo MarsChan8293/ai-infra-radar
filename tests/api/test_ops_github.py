@@ -10,13 +10,21 @@ from radar.app import create_app
 
 
 class _FakeGitHubClient:
-    def __init__(self, items: list[dict], readmes: dict[str, str | None] | None = None) -> None:
+    def __init__(
+        self,
+        items: list[dict],
+        readmes: dict[str, str | None] | None = None,
+        items_by_query: dict[str, list[dict]] | None = None,
+    ) -> None:
         self._items = items
         self._readmes = readmes or {}
+        self._items_by_query = items_by_query or {}
         self.queries: list[str] = []
 
     def search_repositories(self, query: str) -> list[dict]:
         self.queries.append(query)
+        if query in self._items_by_query:
+            return list(self._items_by_query[query])
         return list(self._items)
 
     def fetch_readme_text(self, full_name: str) -> str | None:
@@ -78,6 +86,34 @@ def _make_client(
     app.state.github_client = github_client
     app.state.github_readme_ai_filter = github_readme_ai_filter
     return TestClient(app)
+
+
+def _github_item(
+    full_name: str,
+    *,
+    description: str,
+    stars: int,
+    forks: int,
+    language: str = "Python",
+    topics: list[str] | None = None,
+) -> dict:
+    name = full_name.split("/", 1)[1]
+    owner = full_name.split("/", 1)[0]
+    return {
+        "full_name": full_name,
+        "name": name,
+        "owner": {"login": owner},
+        "html_url": f"https://github.com/{full_name}",
+        "description": description,
+        "stargazers_count": stars,
+        "forks_count": forks,
+        "language": language,
+        "topics": topics or [],
+        "created_at": "2026-04-13T00:00:00Z",
+        "updated_at": "2026-04-13T00:00:00Z",
+        "pushed_at": "2026-04-13T00:00:00Z",
+        "default_branch": "main",
+    }
 
 
 def test_manual_fetch_accepts_github_config_yaml_fragment() -> None:
@@ -155,6 +191,119 @@ def test_manual_fetch_rejects_invalid_yaml_fragment() -> None:
 
     assert response.status_code == 422
     assert "github_config_yaml" in response.text
+    assert github_client.called is False
+
+
+def test_manual_fetch_runs_multiple_queries_and_keyword_filter_before_ai() -> None:
+    spec_repo = _github_item(
+        "acme/spec-repo",
+        description="Speculative decoding serving stack",
+        stars=120,
+        forks=17,
+        topics=["inference", "serving"],
+    )
+    notes_repo = _github_item(
+        "acme/notes",
+        description="Research notes",
+        stars=3,
+        forks=0,
+        language="Markdown",
+        topics=["notes"],
+    )
+    kv_repo = _github_item(
+        "acme/kv-cache",
+        description="KV cache experiments",
+        stars=98,
+        forks=11,
+        topics=["kv-cache"],
+    )
+    github_client = _FakeGitHubClient(
+        [],
+        readmes={
+            "acme/spec-repo": "# Citation\n\n@inproceedings{spec}",
+            "acme/notes": "# Notes only",
+            "acme/kv-cache": "# BibTeX\n\n@article{kv}",
+        },
+        items_by_query={
+            '"speculative decoding" created:>2026-04-12': [spec_repo, notes_repo],
+            '"kv cache" inference created:>2026-04-12': [kv_repo],
+        },
+    )
+    ai_filter = _FakeReadmeAIFilter(
+        {
+            "acme/spec-repo": {
+                "keep": True,
+                "reason_zh": "README 明确提到了 speculative decoding。",
+                "matched_signals": ["speculative decoding"],
+            },
+            "acme/kv-cache": {
+                "keep": False,
+                "reason_zh": "README 更偏实验记录。",
+                "matched_signals": [],
+            },
+        }
+    )
+    client = _make_client(github_client=github_client, github_readme_ai_filter=ai_filter)
+
+    response = client.post(
+        "/ops/github/manual-fetch",
+        json={
+            "github_config_yaml": textwrap.dedent(
+                """
+                queries:
+                  - '"speculative decoding" created:>2026-04-12'
+                  - '"kv cache" inference created:>2026-04-12'
+                burst_threshold: 0.01
+                readme_filter:
+                  enabled: true
+                  require_any:
+                    - citation
+                    - bibtex
+                ai_readme_filter:
+                  enabled: true
+                  model: nvidia/nemotron-3-super-120b-a12b
+                  default_prompt: Decide if this repository is relevant to inference systems.
+                """
+            ).strip()
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert github_client.queries == [
+        '"speculative decoding" created:>2026-04-12',
+        '"kv cache" inference created:>2026-04-12',
+    ]
+    assert [item["full_name"] for item in body["coarse_results"]] == [
+        "acme/spec-repo",
+        "acme/notes",
+        "acme/kv-cache",
+    ]
+    assert [item["full_name"] for item in body["secondary_results"]] == [
+        "acme/spec-repo"
+    ]
+    assert [call["full_name"] for call in ai_filter.calls] == [
+        "acme/spec-repo",
+        "acme/kv-cache",
+    ]
+
+
+def test_manual_fetch_rejects_yaml_without_queries() -> None:
+    github_client = _ExplodingGitHubClient()
+    client = _make_client(
+        github_client=github_client,
+        github_readme_ai_filter=_FakeReadmeAIFilter({}),
+    )
+
+    response = client.post(
+        "/ops/github/manual-fetch",
+        json={
+            "github_config_yaml": "burst_threshold: 0.01",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "queries" in response.text
     assert github_client.called is False
 
 
