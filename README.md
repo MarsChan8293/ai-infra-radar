@@ -129,6 +129,8 @@ The operations console includes:
 
 Manual GitHub fetch runs are **not** persisted into alerts, reports, feeds, or
 the database. The panel is an ephemeral research surface for operators.
+It requires `sources.github.ai_readme_filter.enabled: true` plus the shared
+OpenAI-compatible transport settings under `summarization`.
 
 ## GitHub Pages
 
