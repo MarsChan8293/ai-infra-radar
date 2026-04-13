@@ -2,8 +2,6 @@ name: Deploy Radar Pages
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 * * * *"
 
 concurrency:
   group: deploy-radar-pages-${{ github.event.repository.default_branch }}
