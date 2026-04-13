@@ -16,6 +16,37 @@ def _fallback_reason_text(event: dict[str, Any]) -> str:
     return str(event.get("reason") or "")
 
 
+def _github_fallback_summary(event: dict[str, Any]) -> dict[str, str | None]:
+    reason = event.get("reason") or {}
+    if not isinstance(reason, dict):
+        return _empty_entry_summary()
+
+    full_name = str(reason.get("full_name") or event.get("display_name") or "").strip()
+    if not full_name:
+        return _empty_entry_summary()
+
+    details: list[str] = [f"GitHub 仓库 {full_name} 出现热度增长。"]
+    if reason.get("stars") is not None:
+        details.append(f"Stars：{reason['stars']}。")
+    if reason.get("forks") is not None:
+        details.append(f"Forks：{reason['forks']}。")
+    description = reason.get("description")
+    if description:
+        details.append(f"项目描述：{description}")
+
+    return {
+        "title_zh": f"GitHub 仓库 {full_name} 热度上升",
+        "reason_text_zh": " ".join(details).strip(),
+        "reason_text_en": None,
+    }
+
+
+def _fallback_entry_summary(event: dict[str, Any]) -> dict[str, str | None]:
+    if event.get("source") == "github" and event.get("alert_type") == "github_burst":
+        return _github_fallback_summary(event)
+    return _empty_entry_summary()
+
+
 def build_filter_tags(event: dict[str, Any]) -> dict[str, Any]:
     score = float(event["score"])
     if score >= 0.8:
@@ -56,12 +87,14 @@ def enrich_report_events(
     enriched: list[dict[str, Any]] = []
     for event in events:
         summary_fields = summarizer.summarize_entry(event)
+        fallback_summary = _fallback_entry_summary(event)
 
         enriched_event = {
             **event,
             "filter_tags": build_filter_tags(event),
-            "title_zh": summary_fields.get("title_zh"),
-            "reason_text_zh": summary_fields.get("reason_text_zh"),
+            "title_zh": summary_fields.get("title_zh") or fallback_summary.get("title_zh"),
+            "reason_text_zh": summary_fields.get("reason_text_zh")
+            or fallback_summary.get("reason_text_zh"),
             "reason_text_en": summary_fields.get("reason_text_en")
             or _fallback_reason_text(event),
         }

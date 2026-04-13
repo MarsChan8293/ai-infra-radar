@@ -327,6 +327,44 @@ def test_reports_date_endpoint_exposes_search_filter_and_bilingual_fields(
     assert body["filters"]["sources"][0]["value"] == "github"
 
 
+def test_reports_date_endpoint_builds_github_chinese_fallback_without_model(
+    repo: RadarRepository,
+) -> None:
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="github:acme/tool",
+        display_name="acme/tool",
+        url="https://github.com/acme/tool",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.9,
+        dedupe_key="github:burst:zh-fallback",
+        reason={
+            "full_name": "acme/tool",
+            "stars": 25,
+            "forks": 4,
+            "description": "Fast speculative decoding runtime.",
+        },
+    )
+
+    client = _make_client(repo)
+    date_str = client.get("/reports/manifest").json()["dates"][0]["date"]
+
+    response = client.get(f"/reports/{date_str}")
+
+    assert response.status_code == 200
+    event = response.json()["topics"][0]["events"][0]
+    assert event["title_zh"] == "GitHub 仓库 acme/tool 热度上升"
+    assert event["reason_text_zh"] is not None
+    assert "25" in event["reason_text_zh"]
+    assert "4" in event["reason_text_zh"]
+    assert "Fast speculative decoding runtime." in event["reason_text_zh"]
+
+
 def test_reports_date_endpoint_falls_back_to_null_summarizer_when_state_is_missing(
     repo: RadarRepository, monkeypatch
 ) -> None:
