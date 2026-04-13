@@ -1,0 +1,159 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+#app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.page-header {
+  margin-bottom: 24px;
+}
+
+.grid {
+  display: grid;
+  gap: 24px;
+}
+
+.panel {
+  background: #111827;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.panel-wide {
+  min-height: 320px;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.alerts-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.alerts-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.alerts-list button {
+  width: 100%;
+  text-align: left;
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.button-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.button-grid button {
+  width: 100%;
+  text-align: left;
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.detail-card,
+.status-line {
+  background: #0b1220;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.detail-card {
+  white-space: pre-wrap;
+}
+
+.manual-fetch-form,
+.manual-fetch-results {
+  display: grid;
+  gap: 12px;
+}
+
+.manual-fetch-form {
+  margin-bottom: 12px;
+}
+
+.field-group {
+  display: grid;
+  gap: 6px;
+}
+
+.field-group input,
+.field-group textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0b1220;
+  color: #e2e8f0;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.field-group-wide {
+  grid-column: 1 / -1;
+}
+
+.manual-fetch-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.manual-result-list {
+  display: grid;
+  gap: 12px;
+}
+
+.manual-result-card {
+  background: #0b1220;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.manual-result-card p,
+.manual-result-card h4 {
+  margin: 0 0 8px;
+}
+
+.manual-result-card p:last-child {
+  margin-bottom: 0;
+}
+
+.manual-result-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.manual-result-header a {
+  color: #93c5fd;
+}
+
+.manual-result-card-error {
+  border-color: #b45309;
+}
