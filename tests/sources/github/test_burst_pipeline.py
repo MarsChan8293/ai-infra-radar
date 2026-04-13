@@ -362,7 +362,7 @@ def test_apply_readme_ai_second_pass_returns_structured_fields() -> None:
         "full_name": "example-org/high-activity-repo",
         "description": "High activity repo",
         "html_url": "https://github.com/example-org/high-activity-repo",
-        "readme_status": "fetched",
+        "readme_status": "ok",
         "readme_text": "# README\n\nInference serving with KV cache.",
     }
     readme_filter = _StubFilter()
@@ -414,7 +414,7 @@ def test_apply_readme_ai_second_pass_raises_for_malformed_provider_output(
 
     candidate = {
         "full_name": "example-org/high-activity-repo",
-        "readme_status": "fetched",
+        "readme_status": "ok",
         "readme_text": "# README",
     }
 
@@ -426,7 +426,7 @@ def test_apply_readme_ai_second_pass_raises_for_malformed_provider_output(
         )
 
 
-def test_apply_readme_ai_second_pass_raises_when_candidate_has_no_fetched_readme() -> None:
+def test_apply_readme_ai_second_pass_raises_when_candidate_has_no_ok_readme() -> None:
     from radar.sources.github.readme_ai_filter import apply_readme_ai_second_pass
 
     class _StubFilter:
@@ -441,11 +441,11 @@ def test_apply_readme_ai_second_pass_raises_when_candidate_has_no_fetched_readme
 
     candidate = {
         "full_name": "example-org/high-activity-repo",
-        "readme_status": "missing_readme",
-        "readme_text": None,
+        "readme_status": "fetch_error",
+        "readme_text": "# README",
     }
 
-    with pytest.raises(RuntimeError, match="requires a fetched README text"):
+    with pytest.raises(RuntimeError, match="requires readme_status='ok' with README text"):
         apply_readme_ai_second_pass(
             candidate,
             prompt="Decide relevance.",

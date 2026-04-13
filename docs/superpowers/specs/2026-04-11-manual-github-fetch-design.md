@@ -55,7 +55,7 @@ This layer returns the raw GitHub repository candidates.
 
 For each candidate, fetch README text and attach one of:
 
-- fetched README text
+- `ok` + fetched README text
 - `missing_readme`
 - `fetch_error`
 

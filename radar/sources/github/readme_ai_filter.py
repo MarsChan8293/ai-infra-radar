@@ -32,9 +32,11 @@ def apply_readme_ai_second_pass(
 
 
 def _get_required_readme_text(candidate: dict[str, Any]) -> str:
+    if candidate.get("readme_status") != "ok":
+        raise RuntimeError("README AI second-pass requires readme_status='ok' with README text.")
     readme_text = candidate.get("readme_text")
     if not isinstance(readme_text, str):
-        raise RuntimeError("README AI second-pass requires a fetched README text.")
+        raise RuntimeError("README AI second-pass requires readme_status='ok' with README text.")
     return readme_text
 
 
