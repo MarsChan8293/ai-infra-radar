@@ -82,6 +82,7 @@ Key endpoints:
 | `GET` | `/` | Radar results homepage |
 | `GET` | `/alerts` | List persisted alerts |
 | `GET` | `/ops` | Operations console |
+| `POST` | `/ops/github/manual-fetch` | Run an ephemeral manual GitHub README analysis |
 | `POST` | `/jobs/run/{job_name}` | Trigger a job immediately |
 | `POST` | `/config/reload` | Hot-reload `config.yaml` without restart |
 
@@ -123,6 +124,11 @@ The operations console includes:
 - alert list and detail inspection
 - manual job trigger buttons
 - config reload feedback
+- a manual GitHub fetch panel with date range, query, editable README AI prompt,
+  coarse results, second-pass results, and per-item errors
+
+Manual GitHub fetch runs are **not** persisted into alerts, reports, feeds, or
+the database. The panel is an ephemeral research surface for operators.
 
 ## GitHub Pages
 
@@ -156,6 +162,8 @@ existing static archive, and deploy the refreshed site to GitHub Pages.
 
 Summarization is optional. When enabled, the report builder requests bilingual
 entry descriptions and a daily Chinese briefing from an OpenAI-compatible API.
+The same transport settings are also reused by the optional GitHub README AI
+second-pass filter.
 
 ```yaml
 summarization:
@@ -191,6 +199,17 @@ optional README secondary filter. This fetches each matched repository's README
 and keeps only repositories whose README contains at least one configured
 keyword such as `citation`, `bibtex`, or `@inproceedings{`.
 
+For a stricter second pass, enable `ai_readme_filter`. The scheduled
+`github_burst` job then runs:
+
+1. GitHub search
+2. keyword README prefilter (optional)
+3. README AI second pass (optional)
+4. burst scoring and alert creation
+
+The manual `/ops` fetch panel uses the same README collection and AI second-pass
+core, but keeps its results in page state only instead of creating alerts.
+
 Example for AI inference performance optimization repositories:
 
 ```yaml
@@ -212,10 +231,25 @@ sources:
         - bibtex
         - "@inproceedings{"
         - "@article{"
+    ai_readme_filter:
+      enabled: true
+      model: gpt-4.1-mini
+      default_prompt: |
+        Read this repository README and decide whether it is directly relevant
+        to AI inference, serving, runtime optimization, memory efficiency, or
+        model deployment infrastructure. Return JSON with keep, reason_zh,
+        matched_signals.
+summarization:
+  enabled: true
+  base_url: https://api.openai.com/v1
+  api_key: your-api-key
+  model: gpt-4.1-mini
 ```
 
 Filtering is case-insensitive. Repositories without a matching README are
-excluded from the GitHub alert path.
+excluded from the GitHub alert path. Repositories without a README are also
+excluded from the optional AI second pass, and real README fetch / AI execution
+failures stop the scheduled job instead of silently passing candidates through.
 
 GitHub itself only accepts absolute dates, but AI Infra Radar supports the
 relative placeholders `@today`, `@today-7d`, and `@today+3d` inside GitHub
