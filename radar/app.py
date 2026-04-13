@@ -17,6 +17,7 @@ from radar.api.routes.feed import router as feed_router
 from radar.api.routes.health import router as health_router
 from radar.api.routes.home import router as home_router
 from radar.api.routes.jobs import router as jobs_router
+from radar.api.routes.ops_github import router as ops_github_router
 from radar.api.routes.reports import router as reports_router
 from radar.api.routes.ui import router as ui_router
 from radar.core.config import Settings, load_settings
@@ -370,6 +371,7 @@ def create_app(lifespan: Any = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(alerts_router)
     app.include_router(jobs_router)
+    app.include_router(ops_github_router)
     app.include_router(config_router)
     app.include_router(reports_router)
     app.include_router(feed_router)
