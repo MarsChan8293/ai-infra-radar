@@ -39,8 +39,12 @@ from radar.sources.github.client import GitHubClient
 from radar.sources.gitcode.client import GitCodeClient
 from radar.sources.huggingface.client import HuggingFaceClient
 from radar.sources.github.client import expand_query_date_placeholders
+from radar.sources.github.manual_fetch import collect_readme_candidates
 from radar.sources.github.pipeline import readme_matches_keywords
-from radar.sources.github.readme_ai_filter import OpenAIGitHubReadmeAIFilter
+from radar.sources.github.readme_ai_filter import (
+    OpenAIGitHubReadmeAIFilter,
+    apply_readme_ai_second_pass,
+)
 from radar.sources.modelers.client import ModelersClient
 from radar.sources.modelscope.client import ModelScopeClient
 from radar.sources.official_pages.client import fetch_html
@@ -185,27 +189,55 @@ def build_runtime(config_path: Path) -> RuntimeState:
                     )
                 )
             github_filter = settings.sources.github.readme_filter
-            if github_filter.enabled:
-                filtered_items: list[dict] = []
-                failures: list[tuple[str, Exception]] = []
-                for item in search_items:
-                    full_name = item["full_name"]
-                    try:
-                        readme_text = github_client.fetch_readme_text(full_name)
-                    except Exception as exc:
-                        failures.append((full_name, exc))
-                        continue
-                    if readme_matches_keywords(readme_text, github_filter.require_any):
-                        filtered_items.append(item)
-                search_items = filtered_items
+            github_ai_filter = settings.sources.github.ai_readme_filter
+            if github_filter.enabled or github_ai_filter.enabled:
+                candidates = collect_readme_candidates(
+                    search_items,
+                    fetch_readme_text=github_client.fetch_readme_text,
+                )
+                failures = [
+                    candidate
+                    for candidate in candidates
+                    if candidate["readme_status"] == "fetch_error"
+                ]
                 if failures:
                     failed_repositories = ", ".join(
-                        f"{full_name} ({exc})" for full_name, exc in failures
+                        f"{candidate['full_name']} ({candidate['readme_error']})"
+                        for candidate in failures
                     )
                     raise RuntimeError(
                         "github_burst readme filtering failed for repositories: "
                         f"{failed_repositories}"
                     )
+                if github_filter.enabled:
+                    candidates = [
+                        candidate
+                        for candidate in candidates
+                        if readme_matches_keywords(
+                            candidate["readme_text"],
+                            github_filter.require_any,
+                        )
+                    ]
+                if github_ai_filter.enabled:
+                    filtered_candidates: list[dict[str, Any]] = []
+                    for candidate in candidates:
+                        if candidate["readme_status"] != "ok":
+                            continue
+                        try:
+                            second_pass = apply_readme_ai_second_pass(
+                                candidate,
+                                prompt=github_ai_filter.default_prompt or "",
+                                readme_ai_filter=github_readme_ai_filter,
+                            )
+                        except Exception as exc:
+                            raise RuntimeError(
+                                "github_burst README AI filtering failed for repository "
+                                f"{candidate['full_name']}: {exc}"
+                            ) from exc
+                        if second_pass["keep"]:
+                            filtered_candidates.append(candidate)
+                    candidates = filtered_candidates
+                search_items = [candidate["raw_item"] for candidate in candidates]
             return run_github_burst_job(
                 search_items=search_items,
                 threshold=settings.sources.github.burst_threshold,

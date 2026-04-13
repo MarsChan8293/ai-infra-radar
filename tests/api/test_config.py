@@ -263,6 +263,218 @@ def test_github_job_filters_repositories_by_readme_keywords(
         runtime.engine.dispose()
 
 
+def test_github_job_runs_ai_second_pass_after_keyword_prefilter_and_alerts_only_kept_repositories(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["github"] = {
+        "enabled": True,
+        "token": "ghp_example",
+        "queries": ["kv cache"],
+        "burst_threshold": 0.0,
+        "readme_filter": {
+            "enabled": True,
+            "require_any": ["citation"],
+        },
+        "ai_readme_filter": {
+            "enabled": True,
+            "model": "gpt-test",
+            "default_prompt": "Keep only README files that are relevant to inference systems.",
+        },
+    }
+    config["summarization"] = {
+        "enabled": False,
+        "base_url": "https://llm.example.com/v1",
+        "api_key": "test-key",
+    }
+    config_path.write_text(yaml.dump(config))
+
+    call_log: list[str] = []
+    ai_calls: list[str] = []
+
+    class FakeGitHubClient:
+        def __init__(self, token: str | None = None) -> None:
+            self.token = token
+
+        def search_repositories(self, query: str) -> list[dict]:
+            call_log.append(f"search:{query}")
+            return [
+                {
+                    "full_name": "acme/keep-repo",
+                    "html_url": "https://github.com/acme/keep-repo",
+                    "stargazers_count": 42,
+                    "forks_count": 8,
+                    "pushed_at": "2026-04-08T00:00:00Z",
+                },
+                {
+                    "full_name": "acme/drop-repo",
+                    "html_url": "https://github.com/acme/drop-repo",
+                    "stargazers_count": 40,
+                    "forks_count": 7,
+                    "pushed_at": "2026-04-08T00:00:00Z",
+                },
+                {
+                    "full_name": "acme/no-keyword",
+                    "html_url": "https://github.com/acme/no-keyword",
+                    "stargazers_count": 39,
+                    "forks_count": 6,
+                    "pushed_at": "2026-04-08T00:00:00Z",
+                },
+                {
+                    "full_name": "acme/no-readme",
+                    "html_url": "https://github.com/acme/no-readme",
+                    "stargazers_count": 38,
+                    "forks_count": 5,
+                    "pushed_at": "2026-04-08T00:00:00Z",
+                },
+            ]
+
+        def fetch_readme_text(self, full_name: str) -> str | None:
+            call_log.append(f"fetch:{full_name}")
+            if full_name == "acme/keep-repo":
+                return "# Citation\n\nInference serving for KV cache."
+            if full_name == "acme/drop-repo":
+                return "# Citation\n\nTraining orchestration only."
+            if full_name == "acme/no-keyword":
+                return "# Overview\n\nInference notes only."
+            if full_name == "acme/no-readme":
+                return None
+            raise AssertionError(f"unexpected repository: {full_name}")
+
+    class FakeReadmeAIFilter:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def evaluate(
+            self,
+            *,
+            repository: dict,
+            readme_text: str,
+            prompt: str,
+        ) -> dict:
+            ai_calls.append(repository["full_name"])
+            call_log.append(f"ai:{repository['full_name']}")
+            assert prompt == config["sources"]["github"]["ai_readme_filter"]["default_prompt"]
+            if repository["full_name"] == "acme/keep-repo":
+                assert "Inference serving" in readme_text
+                return {
+                    "keep": True,
+                    "reason_zh": "README 明确提到推理服务。",
+                    "matched_signals": ["inference serving"],
+                }
+            if repository["full_name"] == "acme/drop-repo":
+                return {
+                    "keep": False,
+                    "reason_zh": "README 主要是训练编排。",
+                    "matched_signals": ["training orchestration"],
+                }
+            raise AssertionError(f"unexpected AI evaluation target: {repository['full_name']}")
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("radar.app.GitHubClient", FakeGitHubClient)
+    monkeypatch.setattr("radar.app.OpenAIGitHubReadmeAIFilter", FakeReadmeAIFilter)
+
+    from radar.app import build_runtime
+
+    runtime = build_runtime(config_path)
+    try:
+        runtime.scheduler.run("github_burst")
+        alerts = runtime.repo.list_alerts()
+        assert len(alerts) == 1
+        assert alerts[0].reason["full_name"] == "acme/keep-repo"
+        assert ai_calls == ["acme/keep-repo", "acme/drop-repo"]
+        assert call_log == [
+            "search:kv cache",
+            "fetch:acme/keep-repo",
+            "fetch:acme/drop-repo",
+            "fetch:acme/no-keyword",
+            "fetch:acme/no-readme",
+            "ai:acme/keep-repo",
+            "ai:acme/drop-repo",
+        ]
+    finally:
+        runtime.engine.dispose()
+
+
+def test_github_job_raises_when_ai_second_pass_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config = _minimal_config(str(tmp_path / "radar.db"))
+    config["sources"]["github"] = {
+        "enabled": True,
+        "token": "ghp_example",
+        "queries": ["kv cache"],
+        "burst_threshold": 0.0,
+        "readme_filter": {
+            "enabled": True,
+            "require_any": ["citation"],
+        },
+        "ai_readme_filter": {
+            "enabled": True,
+            "model": "gpt-test",
+            "default_prompt": "Keep only README files that are relevant to inference systems.",
+        },
+    }
+    config["summarization"] = {
+        "enabled": False,
+        "base_url": "https://llm.example.com/v1",
+        "api_key": "test-key",
+    }
+    config_path.write_text(yaml.dump(config))
+
+    class FakeGitHubClient:
+        def __init__(self, token: str | None = None) -> None:
+            self.token = token
+
+        def search_repositories(self, query: str) -> list[dict]:
+            return [
+                {
+                    "full_name": "acme/keep-repo",
+                    "html_url": "https://github.com/acme/keep-repo",
+                    "stargazers_count": 42,
+                    "forks_count": 8,
+                    "pushed_at": "2026-04-08T00:00:00Z",
+                }
+            ]
+
+        def fetch_readme_text(self, full_name: str) -> str | None:
+            assert full_name == "acme/keep-repo"
+            return "# Citation\n\nInference serving for KV cache."
+
+    class FakeReadmeAIFilter:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def evaluate(
+            self,
+            *,
+            repository: dict,
+            readme_text: str,
+            prompt: str,
+        ) -> dict:
+            raise RuntimeError(f"AI second-pass boom for {repository['full_name']}")
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("radar.app.GitHubClient", FakeGitHubClient)
+    monkeypatch.setattr("radar.app.OpenAIGitHubReadmeAIFilter", FakeReadmeAIFilter)
+
+    from radar.app import build_runtime
+
+    runtime = build_runtime(config_path)
+    try:
+        with pytest.raises(RuntimeError, match="AI second-pass boom for acme/keep-repo"):
+            runtime.scheduler.run("github_burst")
+        assert runtime.repo.list_alerts() == []
+    finally:
+        runtime.engine.dispose()
+
+
 def test_github_job_expands_relative_date_placeholders(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
