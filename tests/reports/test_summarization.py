@@ -11,6 +11,7 @@ import yaml
 
 from radar.app import RuntimeState, apply_runtime, build_runtime, create_app, shutdown_runtime
 from radar.reports.summarization import NullReportSummarizer, OpenAIReportSummarizer
+from radar.sources.github.readme_ai_filter import OpenAIGitHubReadmeAIFilter
 
 
 def _write_config(
@@ -117,6 +118,55 @@ def test_openai_report_summarizer_maps_response_to_entry_fields() -> None:
 
 
 @respx.mock
+def test_openai_report_summarizer_retries_transient_remote_protocol_errors() -> None:
+    attempts = {"count": 0}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise httpx.RemoteProtocolError("server disconnected")
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "title_zh": "仓库热度上升",
+                                    "reason_text_zh": "该仓库近期活跃度上升。",
+                                    "reason_text_en": "The repository saw a recent burst in activity.",
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    respx.post("https://example.com/v1/chat/completions").mock(side_effect=_handler)
+
+    summarizer = OpenAIReportSummarizer(
+        base_url="https://example.com/v1",
+        api_key="test-key",
+        model="test-model",
+        timeout_seconds=20,
+        max_input_chars=4000,
+    )
+
+    result = summarizer.summarize_entry(
+        {
+            "display_name": "acme/tool",
+            "source": "github",
+            "reason": {"full_name": "acme/tool", "stars": 25},
+        }
+    )
+
+    assert attempts["count"] == 2
+    assert result["title_zh"] == "仓库热度上升"
+
+
+@respx.mock
 def test_openai_report_summarizer_maps_response_to_daily_briefing_fields() -> None:
     respx.post("https://example.com/v1/chat/completions").mock(
         return_value=httpx.Response(
@@ -155,6 +205,126 @@ def test_openai_report_summarizer_maps_response_to_daily_briefing_fields() -> No
         "briefing_zh": "今日 AI 基础设施项目整体保持活跃。",
         "briefing_en": "AI infrastructure projects remained active today.",
     }
+
+
+@respx.mock
+def test_openai_report_summarizer_retries_retryable_status_codes() -> None:
+    attempts = {"count": 0}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            return httpx.Response(429, json={"error": "rate limited"})
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "briefing_zh": "今日 AI 基础设施项目整体保持活跃。",
+                                    "briefing_en": "AI infrastructure projects remained active today.",
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    respx.post("https://example.com/v1/chat/completions").mock(side_effect=_handler)
+
+    summarizer = OpenAIReportSummarizer(
+        base_url="https://example.com/v1",
+        api_key="test-key",
+        model="test-model",
+        timeout_seconds=20,
+        max_input_chars=4000,
+    )
+
+    result = summarizer.summarize_daily_briefing(
+        date="2026-04-09",
+        entries=[{"display_name": "acme/tool", "source": "github", "reason": {}}],
+    )
+
+    assert attempts["count"] == 2
+    assert result["briefing_en"] == "AI infrastructure projects remained active today."
+
+
+@respx.mock
+def test_openai_github_readme_ai_filter_retries_transient_remote_protocol_errors() -> None:
+    attempts = {"count": 0}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise httpx.RemoteProtocolError("server disconnected")
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "keep": True,
+                                    "reason_zh": "README 与推理系统直接相关。",
+                                    "matched_signals": ["inference serving"],
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    respx.post("https://example.com/v1/chat/completions").mock(side_effect=_handler)
+
+    readme_filter = OpenAIGitHubReadmeAIFilter(
+        base_url="https://example.com/v1",
+        api_key="test-key",
+        model="readme-filter-model",
+        timeout_seconds=20,
+        max_input_chars=4000,
+    )
+
+    result = readme_filter.evaluate(
+        repository={"full_name": "acme/serve-fast"},
+        readme_text="README serving and throughput details",
+        prompt="Decide if the README is relevant to inference systems.",
+    )
+
+    assert attempts["count"] == 2
+    assert result["keep"] is True
+
+
+@respx.mock
+def test_openai_github_readme_ai_filter_does_not_retry_non_retryable_status_codes() -> None:
+    attempts = {"count": 0}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        return httpx.Response(400, json={"error": "bad request"})
+
+    respx.post("https://example.com/v1/chat/completions").mock(side_effect=_handler)
+
+    readme_filter = OpenAIGitHubReadmeAIFilter(
+        base_url="https://example.com/v1",
+        api_key="test-key",
+        model="readme-filter-model",
+        timeout_seconds=20,
+        max_input_chars=4000,
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        readme_filter.evaluate(
+            repository={"full_name": "acme/serve-fast"},
+            readme_text="README serving and throughput details",
+            prompt="Decide if the README is relevant to inference systems.",
+        )
+
+    assert attempts["count"] == 1
 
 
 @pytest.mark.parametrize(

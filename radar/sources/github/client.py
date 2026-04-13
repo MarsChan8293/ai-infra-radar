@@ -6,6 +6,8 @@ from datetime import date, timedelta
 
 import httpx
 
+from radar.core.http_retry import send_with_retries
+
 _DEFAULT_PER_PAGE = 30
 _TODAY_TOKEN_RE = re.compile(r"@today(?:(?P<sign>[+-])(?P<days>\d+)d)?")
 
@@ -50,18 +52,19 @@ class GitHubClient:
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
 
-        response = httpx.get(
-            "https://api.github.com/search/repositories",
-            params={
-                "q": query,
-                "sort": "updated",
-                "order": "desc",
-                "per_page": _DEFAULT_PER_PAGE,
-            },
-            headers=headers,
-            timeout=15.0,
+        response = send_with_retries(
+            lambda: httpx.get(
+                "https://api.github.com/search/repositories",
+                params={
+                    "q": query,
+                    "sort": "updated",
+                    "order": "desc",
+                    "per_page": _DEFAULT_PER_PAGE,
+                },
+                headers=headers,
+                timeout=15.0,
+            )
         )
-        response.raise_for_status()
         return response.json()["items"]
 
     def fetch_readme_text(self, full_name: str) -> str | None:
@@ -71,14 +74,16 @@ class GitHubClient:
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
 
-        response = httpx.get(
-            f"https://api.github.com/repos/{full_name}/readme",
-            headers=headers,
-            timeout=15.0,
+        response = send_with_retries(
+            lambda: httpx.get(
+                f"https://api.github.com/repos/{full_name}/readme",
+                headers=headers,
+                timeout=15.0,
+            ),
+            allowed_status_codes={404},
         )
         if response.status_code == 404:
             return None
-        response.raise_for_status()
         return response.text
 
 

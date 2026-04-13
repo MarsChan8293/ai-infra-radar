@@ -238,6 +238,30 @@ def test_github_client_fetches_search_items() -> None:
 
 
 @respx.mock
+def test_github_client_retries_transient_search_connect_errors() -> None:
+    from radar.sources.github.client import GitHubClient
+
+    payload = json.loads(FIXTURE_PATH.read_text())
+    attempts = {"count": 0}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise httpx.ConnectError("tls eof", request=request)
+        return httpx.Response(200, json=payload)
+
+    respx.route(
+        method="GET",
+        url__startswith="https://api.github.com/search/repositories",
+    ).mock(side_effect=_handler)
+
+    items = GitHubClient().search_repositories(query="ai infrastructure")
+
+    assert attempts["count"] == 2
+    assert len(items) == 2
+
+
+@respx.mock
 def test_github_client_fetches_readme_text() -> None:
     from radar.sources.github.client import GitHubClient
 
@@ -247,6 +271,28 @@ def test_github_client_fetches_readme_text() -> None:
 
     readme = GitHubClient().fetch_readme_text("example-org/high-activity-repo")
 
+    assert "Citation" in readme
+
+
+@respx.mock
+def test_github_client_retries_transient_readme_timeouts() -> None:
+    from radar.sources.github.client import GitHubClient
+
+    attempts = {"count": 0}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(200, text="# README\n\n## Citation\n\n@inproceedings{demo}")
+
+    respx.get("https://api.github.com/repos/example-org/high-activity-repo/readme").mock(
+        side_effect=_handler
+    )
+
+    readme = GitHubClient().fetch_readme_text("example-org/high-activity-repo")
+
+    assert attempts["count"] == 2
     assert "Citation" in readme
 
 

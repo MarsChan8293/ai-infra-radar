@@ -5,6 +5,8 @@ from typing import Any, Protocol
 
 import httpx
 
+from radar.core.http_retry import send_with_retries
+
 
 class GitHubReadmeAIFilter(Protocol):
     def evaluate(
@@ -60,18 +62,19 @@ class OpenAIGitHubReadmeAIFilter:
         }
 
     def _request_json(self, *, system_prompt: str, prompt: str) -> dict[str, Any]:
-        response = self._client.post(
-            "/chat/completions",
-            json={
-                "model": self._model,
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-            },
+        response = send_with_retries(
+            lambda: self._client.post(
+                "/chat/completions",
+                json={
+                    "model": self._model,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                },
+            )
         )
-        response.raise_for_status()
         try:
             payload = json.loads(_extract_content(response.json()))
         except json.JSONDecodeError as exc:
