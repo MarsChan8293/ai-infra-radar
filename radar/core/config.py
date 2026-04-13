@@ -55,10 +55,13 @@ class ChannelSettings(BaseModel):
 class GitHubAIReadmeFilterSettings(BaseModel):
     model_config = _FORBID
     enabled: bool = False
+    model: str | None = None
     default_prompt: str | None = None
 
     @model_validator(mode="after")
-    def _require_prompt_when_enabled(self) -> "GitHubAIReadmeFilterSettings":
+    def _require_provider_fields_when_enabled(self) -> "GitHubAIReadmeFilterSettings":
+        if self.enabled and (self.model is None or not self.model.strip()):
+            raise ValueError("model is required when ai_readme_filter is enabled")
         if self.enabled and (
             self.default_prompt is None or not self.default_prompt.strip()
         ):

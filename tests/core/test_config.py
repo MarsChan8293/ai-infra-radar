@@ -1023,18 +1023,58 @@ sources:
 
 
 def test_github_ai_readme_filter_defaults_to_disabled(tmp_path: Path) -> None:
-    """ai_readme_filter defaults to disabled with no prompt when not specified."""
+    """ai_readme_filter defaults to disabled with no provider fields when omitted."""
     config_path = tmp_path / "radar.yaml"
     config_path.write_text(_GITHUB_AI_README_FILTER_BASE_YAML.strip())
 
     settings = load_settings(config_path)
 
     assert settings.sources.github.ai_readme_filter.enabled is False
+    assert settings.sources.github.ai_readme_filter.model is None
     assert settings.sources.github.ai_readme_filter.default_prompt is None
 
 
-def test_github_ai_readme_filter_enabled_with_prompt_is_valid(tmp_path: Path) -> None:
-    """ai_readme_filter enabled=true with a default_prompt is accepted."""
+def test_github_ai_readme_filter_enabled_with_provider_shape_is_valid(
+    tmp_path: Path,
+) -> None:
+    """ai_readme_filter accepts the spec-shaped placeholder provider config."""
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+    ai_readme_filter:
+      enabled: true
+      model: gpt-4.1-mini
+      default_prompt: "Does this README describe an AI infrastructure tool?"
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+""".strip()
+    )
+
+    settings = load_settings(config_path)
+
+    assert settings.sources.github.ai_readme_filter.enabled is True
+    assert settings.sources.github.ai_readme_filter.model == "gpt-4.1-mini"
+    assert settings.sources.github.ai_readme_filter.default_prompt == (
+        "Does this README describe an AI infrastructure tool?"
+    )
+
+
+def test_github_ai_readme_filter_enabled_without_model_raises(tmp_path: Path) -> None:
+    """ai_readme_filter enabled=true without model must raise ValidationError."""
     config_path = tmp_path / "radar.yaml"
     config_path.write_text(
         """
@@ -1060,16 +1100,14 @@ sources:
 """.strip()
     )
 
-    settings = load_settings(config_path)
-
-    assert settings.sources.github.ai_readme_filter.enabled is True
-    assert settings.sources.github.ai_readme_filter.default_prompt == (
-        "Does this README describe an AI infrastructure tool?"
-    )
+    with pytest.raises(ValidationError, match="model"):
+        load_settings(config_path)
 
 
-def test_github_ai_readme_filter_enabled_without_prompt_raises(tmp_path: Path) -> None:
-    """ai_readme_filter enabled=true without default_prompt must raise ValidationError."""
+def test_github_ai_readme_filter_enabled_with_blank_model_raises(
+    tmp_path: Path,
+) -> None:
+    """ai_readme_filter enabled=true with a blank model must raise."""
     config_path = tmp_path / "radar.yaml"
     config_path.write_text(
         """
@@ -1087,6 +1125,8 @@ sources:
     enabled: false
     ai_readme_filter:
       enabled: true
+      model: "   "
+      default_prompt: "Does this README describe an AI infrastructure tool?"
   official_pages:
     enabled: false
   huggingface:
@@ -1094,7 +1134,7 @@ sources:
 """.strip()
     )
 
-    with pytest.raises(ValidationError, match="default_prompt"):
+    with pytest.raises(ValidationError, match="model"):
         load_settings(config_path)
 
 
@@ -1119,6 +1159,7 @@ sources:
     enabled: false
     ai_readme_filter:
       enabled: true
+      model: gpt-4.1-mini
       default_prompt: "   "
   official_pages:
     enabled: false
