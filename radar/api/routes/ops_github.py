@@ -1,16 +1,15 @@
 """Manual GitHub ops API routes."""
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
+import yaml
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
-from radar.sources.github.manual_fetch import (
-    build_created_range_query,
-    collect_readme_candidates,
-)
+from radar.core.config import GitHubSettings
+from radar.sources.github.client import expand_query_date_placeholders
+from radar.sources.github.manual_fetch import collect_readme_candidates
 from radar.sources.github.readme_ai_filter import apply_readme_ai_second_pass
 
 router = APIRouter(prefix="/ops/github", tags=["ops-github"])
@@ -36,24 +35,15 @@ _COARSE_FIELDS = (
 class ManualGitHubFetchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    start_date: date
-    end_date: date
-    query: str
-    readme_prompt: str
+    github_config_yaml: str
 
-    @field_validator("query")
+    @field_validator("github_config_yaml")
     @classmethod
     def _require_non_blank_text(cls, value: str) -> str:
         stripped = value.strip()
         if not stripped:
             raise ValueError("must not be blank")
         return stripped
-
-    @model_validator(mode="after")
-    def _validate_date_range(self) -> "ManualGitHubFetchRequest":
-        if self.start_date > self.end_date:
-            raise ValueError("start_date must be on or before end_date")
-        return self
 
 
 @router.post("/manual-fetch")
@@ -74,13 +64,10 @@ def manual_fetch_github(
             detail="README AI filtering is unavailable because the runtime dependency is not configured.",
         )
 
-    readme_prompt = _resolve_readme_prompt(payload, request)
+    github_settings = _load_manual_github_settings(payload.github_config_yaml)
+    readme_prompt = _resolve_readme_prompt(github_settings, request)
 
-    expanded_query = build_created_range_query(
-        payload.query,
-        start_date=payload.start_date.isoformat(),
-        end_date=payload.end_date.isoformat(),
-    )
+    expanded_query = expand_query_date_placeholders(github_settings.queries[0])
     search_items = github_client.search_repositories(expanded_query)
     candidates = collect_readme_candidates(
         search_items,
@@ -120,9 +107,8 @@ def manual_fetch_github(
 
     return {
         "request": {
-            "query": expanded_query,
-            "start_date": payload.start_date.isoformat(),
-            "end_date": payload.end_date.isoformat(),
+            "queries": [expanded_query],
+            "burst_threshold": github_settings.burst_threshold,
             "readme_prompt": readme_prompt,
         },
         "summary": {
@@ -141,10 +127,37 @@ def manual_fetch_github(
     }
 
 
-def _resolve_readme_prompt(payload: ManualGitHubFetchRequest, request: Request) -> str:
-    readme_prompt = payload.readme_prompt.strip()
-    if readme_prompt:
-        return readme_prompt
+def _load_manual_github_settings(yaml_text: str) -> GitHubSettings:
+    try:
+        payload = yaml.safe_load(yaml_text)
+    except yaml.YAMLError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid github_config_yaml: {exc}",
+        ) from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=422,
+            detail="github_config_yaml must decode to a mapping.",
+        )
+    try:
+        return GitHubSettings.model_validate(
+            {
+                "enabled": True,
+                "token": None,
+                **payload,
+            }
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+
+def _resolve_readme_prompt(github_settings: GitHubSettings, request: Request) -> str:
+    configured_prompt = github_settings.ai_readme_filter.default_prompt
+    if isinstance(configured_prompt, str):
+        configured_prompt = configured_prompt.strip()
+        if configured_prompt:
+            return configured_prompt
 
     default_prompt = (
         getattr(

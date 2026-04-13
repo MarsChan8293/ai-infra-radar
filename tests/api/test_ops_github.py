@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import textwrap
 from types import SimpleNamespace
 
 import pytest
@@ -77,6 +78,84 @@ def _make_client(
     app.state.github_client = github_client
     app.state.github_readme_ai_filter = github_readme_ai_filter
     return TestClient(app)
+
+
+def test_manual_fetch_accepts_github_config_yaml_fragment() -> None:
+    github_client = _FakeGitHubClient(
+        [
+            {
+                "full_name": "acme/serve-fast",
+                "name": "serve-fast",
+                "owner": {"login": "acme"},
+                "html_url": "https://github.com/acme/serve-fast",
+                "description": "High-throughput inference server",
+                "stargazers_count": 120,
+                "forks_count": 17,
+                "language": "Python",
+                "topics": ["inference", "serving"],
+                "created_at": "2026-04-03T00:00:00Z",
+                "updated_at": "2026-04-10T00:00:00Z",
+                "pushed_at": "2026-04-10T00:00:00Z",
+                "default_branch": "main",
+            }
+        ],
+        readmes={"acme/serve-fast": "README serving and throughput details"},
+    )
+    ai_filter = _FakeReadmeAIFilter(
+        {
+            "acme/serve-fast": {
+                "keep": True,
+                "reason_zh": "README 明确描述了推理服务能力。",
+                "matched_signals": ["serving", "throughput"],
+            }
+        }
+    )
+    client = _make_client(github_client=github_client, github_readme_ai_filter=ai_filter)
+
+    response = client.post(
+        "/ops/github/manual-fetch",
+        json={
+            "github_config_yaml": textwrap.dedent(
+                """
+                queries:
+                  - '"speculative decoding" created:>@today-1d'
+                burst_threshold: 0.01
+                readme_filter:
+                  enabled: false
+                ai_readme_filter:
+                  enabled: true
+                  model: nvidia/nemotron-3-super-120b-a12b
+                  default_prompt: Decide if this repository is relevant to inference systems.
+                """
+            ).strip()
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"]["coarse_count"] == 1
+    assert body["request"]["readme_prompt"] == (
+        "Decide if this repository is relevant to inference systems."
+    )
+
+
+def test_manual_fetch_rejects_invalid_yaml_fragment() -> None:
+    github_client = _ExplodingGitHubClient()
+    client = _make_client(
+        github_client=github_client,
+        github_readme_ai_filter=_FakeReadmeAIFilter({}),
+    )
+
+    response = client.post(
+        "/ops/github/manual-fetch",
+        json={
+            "github_config_yaml": "queries: [unterminated",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "github_config_yaml" in response.text
+    assert github_client.called is False
 
 
 def test_manual_fetch_returns_coarse_and_secondary_results() -> None:
