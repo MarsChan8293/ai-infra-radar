@@ -4,6 +4,7 @@ import textwrap
 from types import SimpleNamespace
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from radar.app import create_app
@@ -114,6 +115,33 @@ def _github_item(
         "pushed_at": "2026-04-13T00:00:00Z",
         "default_branch": "main",
     }
+
+
+def _yaml_fragment(
+    *queries: str,
+    burst_threshold: float = 0.01,
+    readme_filter_enabled: bool = False,
+    readme_keywords: list[str] | None = None,
+    ai_readme_filter_enabled: bool = True,
+    model: str = "nvidia/nemotron-3-super-120b-a12b",
+    default_prompt: str | None = "Decide if this repository is relevant to inference systems.",
+) -> str:
+    payload: dict[str, object] = {
+        "queries": list(queries),
+        "burst_threshold": burst_threshold,
+    }
+    if readme_filter_enabled:
+        payload["readme_filter"] = {
+            "enabled": True,
+            "require_any": readme_keywords or [],
+        }
+    if ai_readme_filter_enabled:
+        payload["ai_readme_filter"] = {
+            "enabled": True,
+            "model": model,
+            "default_prompt": default_prompt,
+        }
+    return yaml.safe_dump(payload, sort_keys=False).strip()
 
 
 def test_manual_fetch_accepts_github_config_yaml_fragment() -> None:
@@ -366,19 +394,18 @@ def test_manual_fetch_returns_coarse_and_secondary_results() -> None:
     response = client.post(
         "/ops/github/manual-fetch",
         json={
-            "start_date": "2026-04-01",
-            "end_date": "2026-04-10",
-            "query": '"speculative decoding"',
-            "readme_prompt": "Decide if this repository is relevant to inference systems.",
+            "github_config_yaml": _yaml_fragment(
+                '"speculative decoding"',
+                default_prompt="Decide if this repository is relevant to inference systems.",
+            ),
         },
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["request"] == {
-        "query": '"speculative decoding" created:2026-04-01..2026-04-10',
-        "start_date": "2026-04-01",
-        "end_date": "2026-04-10",
+        "queries": ['"speculative decoding"'],
+        "burst_threshold": 0.01,
         "readme_prompt": "Decide if this repository is relevant to inference systems.",
     }
     assert body["summary"] == {
@@ -442,7 +469,7 @@ def test_manual_fetch_returns_coarse_and_secondary_results() -> None:
         }
     ]
     assert body["errors"] == []
-    assert github_client.queries == ['"speculative decoding" created:2026-04-01..2026-04-10']
+    assert github_client.queries == ['"speculative decoding"']
     assert ai_filter.calls == [
         {
             "full_name": "acme/serve-fast",
@@ -457,7 +484,7 @@ def test_manual_fetch_returns_coarse_and_secondary_results() -> None:
     ]
 
 
-def test_manual_fetch_rejects_invalid_date_range() -> None:
+def test_manual_fetch_rejects_blank_github_config_yaml() -> None:
     client = _make_client(
         github_client=_FakeGitHubClient([], {}),
         github_readme_ai_filter=_FakeReadmeAIFilter({}),
@@ -466,19 +493,15 @@ def test_manual_fetch_rejects_invalid_date_range() -> None:
     response = client.post(
         "/ops/github/manual-fetch",
         json={
-            "start_date": "2026-04-10",
-            "end_date": "2026-04-01",
-            "query": '"speculative decoding"',
-            "readme_prompt": "Decide if this repository is relevant to inference systems.",
+            "github_config_yaml": "   ",
         },
     )
 
     assert response.status_code == 422
-    assert "start_date" in response.text
-    assert "end_date" in response.text
+    assert "github_config_yaml" in response.text
 
 
-def test_manual_fetch_rejects_blank_query() -> None:
+def test_manual_fetch_rejects_non_mapping_yaml_fragment() -> None:
     client = _make_client(
         github_client=_FakeGitHubClient([], {}),
         github_readme_ai_filter=_FakeReadmeAIFilter({}),
@@ -487,15 +510,12 @@ def test_manual_fetch_rejects_blank_query() -> None:
     response = client.post(
         "/ops/github/manual-fetch",
         json={
-            "start_date": "2026-04-01",
-            "end_date": "2026-04-10",
-            "query": "   ",
-            "readme_prompt": "Decide if this repository is relevant to inference systems.",
+            "github_config_yaml": "- one\n- two",
         },
     )
 
     assert response.status_code == 422
-    assert "query" in response.text
+    assert "decode to a mapping" in response.text
 
 
 def test_manual_fetch_blank_prompt_falls_back_to_default_prompt() -> None:
@@ -538,10 +558,10 @@ def test_manual_fetch_blank_prompt_falls_back_to_default_prompt() -> None:
     response = client.post(
         "/ops/github/manual-fetch",
         json={
-            "start_date": "2026-04-01",
-            "end_date": "2026-04-10",
-            "query": '"speculative decoding"',
-            "readme_prompt": "   ",
+            "github_config_yaml": _yaml_fragment(
+                '"speculative decoding"',
+                ai_readme_filter_enabled=False,
+            ),
         },
     )
 
@@ -600,10 +620,10 @@ def test_manual_fetch_reports_readme_fetch_errors() -> None:
     response = client.post(
         "/ops/github/manual-fetch",
         json={
-            "start_date": "2026-04-01",
-            "end_date": "2026-04-10",
-            "query": "kv cache",
-            "readme_prompt": "Decide if this repository is relevant to inference systems.",
+            "github_config_yaml": _yaml_fragment(
+                "kv cache",
+                default_prompt="Decide if this repository is relevant to inference systems.",
+            ),
         },
     )
 
@@ -668,10 +688,10 @@ def test_manual_fetch_counts_and_reports_missing_readme() -> None:
     response = client.post(
         "/ops/github/manual-fetch",
         json={
-            "start_date": "2026-04-01",
-            "end_date": "2026-04-10",
-            "query": "kv cache",
-            "readme_prompt": "Decide if this repository is relevant to inference systems.",
+            "github_config_yaml": _yaml_fragment(
+                "kv cache",
+                default_prompt="Decide if this repository is relevant to inference systems.",
+            ),
         },
     )
 
@@ -702,10 +722,10 @@ def test_manual_fetch_fails_clearly_when_ai_filter_runtime_is_missing() -> None:
     response = client.post(
         "/ops/github/manual-fetch",
         json={
-            "start_date": "2026-04-01",
-            "end_date": "2026-04-10",
-            "query": "kv cache",
-            "readme_prompt": "Decide if this repository is relevant to inference systems.",
+            "github_config_yaml": _yaml_fragment(
+                "kv cache",
+                default_prompt="Decide if this repository is relevant to inference systems.",
+            ),
         },
     )
 

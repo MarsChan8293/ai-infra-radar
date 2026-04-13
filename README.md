@@ -124,8 +124,8 @@ The operations console includes:
 - alert list and detail inspection
 - manual job trigger buttons
 - config reload feedback
-- a manual GitHub fetch panel with date range, query, editable README AI prompt,
-  coarse results, second-pass results, and per-item errors
+- a manual GitHub fetch panel with a YAML editor for a `sources.github`-style
+  config fragment, plus coarse results, second-pass results, and per-item errors
 
 Manual GitHub fetch runs are **not** persisted into alerts, reports, feeds, or
 the database. The panel is an ephemeral research surface for operators.
