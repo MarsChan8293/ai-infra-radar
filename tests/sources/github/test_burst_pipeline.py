@@ -279,6 +279,180 @@ def test_expand_query_date_placeholders_resolves_today_literal() -> None:
     assert expanded == "pushed:>=2026-04-08"
 
 
+def test_build_created_range_query_appends_date_window() -> None:
+    from radar.sources.github.manual_fetch import build_created_range_query
+
+    query = build_created_range_query(
+        '"speculative decoding"',
+        start_date="2026-04-01",
+        end_date="2026-04-10",
+    )
+
+    assert query == '"speculative decoding" created:2026-04-01..2026-04-10'
+
+
+def test_collect_readme_candidates_attaches_repository_metadata_and_status() -> None:
+    from radar.sources.github.manual_fetch import collect_readme_candidates
+
+    items = _load_items()
+
+    def _fetch_readme_text(full_name: str) -> str | None:
+        if full_name == "example-org/high-activity-repo":
+            return "# README\n\nMentions inference serving and KV cache."
+        return None
+
+    candidates = collect_readme_candidates(items, fetch_readme_text=_fetch_readme_text)
+
+    assert candidates[0]["full_name"] == "example-org/high-activity-repo"
+    assert candidates[0]["html_url"] == items[0]["html_url"]
+    assert candidates[0]["stars"] == items[0]["stargazers_count"]
+    assert candidates[0]["forks"] == items[0]["forks_count"]
+    assert candidates[0]["readme_status"] == "ok"
+    assert "inference serving" in candidates[0]["readme_text"]
+    assert candidates[0]["raw_item"] == items[0]
+    assert candidates[1]["full_name"] == "example-org/low-activity-repo"
+    assert candidates[1]["readme_status"] == "missing_readme"
+    assert candidates[1]["readme_text"] is None
+
+
+def test_collect_readme_candidates_marks_fetch_errors() -> None:
+    from radar.sources.github.manual_fetch import collect_readme_candidates
+
+    def _fetch_readme_text(full_name: str) -> str | None:
+        raise httpx.ReadTimeout(f"timed out for {full_name}")
+
+    candidates = collect_readme_candidates(
+        [_load_items()[0]],
+        fetch_readme_text=_fetch_readme_text,
+    )
+
+    assert candidates[0]["readme_status"] == "fetch_error"
+    assert candidates[0]["readme_text"] is None
+    assert "timed out" in candidates[0]["readme_error"]
+
+
+def test_apply_readme_ai_second_pass_returns_structured_fields() -> None:
+    from radar.sources.github.readme_ai_filter import apply_readme_ai_second_pass
+
+    class _StubFilter:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def evaluate(
+            self,
+            *,
+            repository: dict,
+            readme_text: str,
+            prompt: str,
+        ) -> dict:
+            self.calls.append(
+                {
+                    "repository": repository,
+                    "readme_text": readme_text,
+                    "prompt": prompt,
+                }
+            )
+            return {
+                "keep": True,
+                "reason_zh": "README 明确提到了推理服务与 KV cache。",
+                "matched_signals": ["inference serving", "kv cache"],
+            }
+
+    candidate = {
+        "full_name": "example-org/high-activity-repo",
+        "description": "High activity repo",
+        "html_url": "https://github.com/example-org/high-activity-repo",
+        "readme_status": "fetched",
+        "readme_text": "# README\n\nInference serving with KV cache.",
+    }
+    readme_filter = _StubFilter()
+
+    result = apply_readme_ai_second_pass(
+        candidate,
+        prompt="Decide whether the repository is relevant to AI inference systems.",
+        readme_ai_filter=readme_filter,
+    )
+
+    assert result == {
+        "keep": True,
+        "reason_zh": "README 明确提到了推理服务与 KV cache。",
+        "matched_signals": ["inference serving", "kv cache"],
+    }
+    assert readme_filter.calls[0]["repository"]["full_name"] == candidate["full_name"]
+    assert "KV cache" in readme_filter.calls[0]["readme_text"]
+
+
+@pytest.mark.parametrize(
+    ("provider_payload", "message"),
+    [
+        ({}, "field 'keep' must be a boolean"),
+        (
+            {"keep": True, "matched_signals": ["kv cache"]},
+            "field 'reason_zh' must be a string",
+        ),
+        (
+            {"keep": True, "reason_zh": "ok", "matched_signals": "kv cache"},
+            "field 'matched_signals' must be a list of strings",
+        ),
+    ],
+)
+def test_apply_readme_ai_second_pass_raises_for_malformed_provider_output(
+    provider_payload: dict,
+    message: str,
+) -> None:
+    from radar.sources.github.readme_ai_filter import apply_readme_ai_second_pass
+
+    class _StubFilter:
+        def evaluate(
+            self,
+            *,
+            repository: dict,
+            readme_text: str,
+            prompt: str,
+        ) -> dict:
+            return provider_payload
+
+    candidate = {
+        "full_name": "example-org/high-activity-repo",
+        "readme_status": "fetched",
+        "readme_text": "# README",
+    }
+
+    with pytest.raises(RuntimeError, match=message):
+        apply_readme_ai_second_pass(
+            candidate,
+            prompt="Decide relevance.",
+            readme_ai_filter=_StubFilter(),
+        )
+
+
+def test_apply_readme_ai_second_pass_raises_when_candidate_has_no_fetched_readme() -> None:
+    from radar.sources.github.readme_ai_filter import apply_readme_ai_second_pass
+
+    class _StubFilter:
+        def evaluate(
+            self,
+            *,
+            repository: dict,
+            readme_text: str,
+            prompt: str,
+        ) -> dict:
+            return {"keep": True, "reason_zh": "ok", "matched_signals": []}
+
+    candidate = {
+        "full_name": "example-org/high-activity-repo",
+        "readme_status": "missing_readme",
+        "readme_text": None,
+    }
+
+    with pytest.raises(RuntimeError, match="requires a fetched README text"):
+        apply_readme_ai_second_pass(
+            candidate,
+            prompt="Decide relevance.",
+            readme_ai_filter=_StubFilter(),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Test 13: process_github_burst creates entity and alert (full integration)
 # ---------------------------------------------------------------------------
