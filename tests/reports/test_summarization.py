@@ -13,7 +13,12 @@ from radar.app import RuntimeState, apply_runtime, build_runtime, create_app, sh
 from radar.reports.summarization import NullReportSummarizer, OpenAIReportSummarizer
 
 
-def _write_config(tmp_path: Path, *, summarization: dict | None = None) -> Path:
+def _write_config(
+    tmp_path: Path,
+    *,
+    summarization: dict | None = None,
+    github: dict | None = None,
+) -> Path:
     config = {
         "app": {"timezone": "UTC"},
         "storage": {"path": str(tmp_path / "radar.db")},
@@ -22,7 +27,7 @@ def _write_config(tmp_path: Path, *, summarization: dict | None = None) -> Path:
             "email": {"enabled": False},
         },
         "sources": {
-            "github": {"enabled": False},
+            "github": github or {"enabled": False},
             "official_pages": {"enabled": False},
             "huggingface": {"enabled": False},
             "modelscope": {"enabled": False},
@@ -346,6 +351,74 @@ def test_build_runtime_uses_openai_report_summarizer_when_enabled(tmp_path: Path
         runtime.engine.dispose()
 
 
+@respx.mock
+def test_build_runtime_wires_openai_github_readme_ai_filter_when_enabled(
+    tmp_path: Path,
+) -> None:
+    route = respx.post("https://example.com/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "keep": True,
+                                    "reason_zh": "README 与推理系统直接相关。",
+                                    "matched_signals": ["inference serving"],
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+    )
+
+    runtime = build_runtime(
+        _write_config(
+            tmp_path,
+            summarization={
+                "enabled": False,
+                "base_url": "https://example.com/v1",
+                "api_key": "test-key",
+                "timeout_seconds": 15,
+                "max_input_chars": 3000,
+            },
+            github={
+                "enabled": False,
+                "ai_readme_filter": {
+                    "enabled": True,
+                    "model": "readme-filter-model",
+                    "default_prompt": "Decide if the README is relevant to inference systems.",
+                },
+            },
+        )
+    )
+
+    try:
+        assert runtime.github_readme_ai_filter is not None
+        result = runtime.github_readme_ai_filter.evaluate(
+            repository={"full_name": "acme/serve-fast"},
+            readme_text="README serving and throughput details",
+            prompt="Decide if the README is relevant to inference systems.",
+        )
+        assert result == {
+            "keep": True,
+            "reason_zh": "README 与推理系统直接相关。",
+            "matched_signals": ["inference serving"],
+        }
+        request = route.calls[0].request
+        assert request.headers["Authorization"] == "Bearer test-key"
+        assert json.loads(request.read().decode())["model"] == "readme-filter-model"
+    finally:
+        if runtime.github_readme_ai_filter is not None:
+            runtime.github_readme_ai_filter.close()
+        runtime.report_summarizer.close()
+        runtime.engine.dispose()
+
+
 class _FakeScheduler:
     def __init__(self) -> None:
         self.started = False
@@ -382,7 +455,25 @@ class _FakeSummarizer:
         self.closed = True
 
 
-def _runtime_with(scheduler: _FakeScheduler, engine: _FakeEngine, summarizer: _FakeSummarizer) -> RuntimeState:
+class _FakeReadmeAIFilter:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def evaluate(
+        self, *, repository: dict[str, object], readme_text: str, prompt: str
+    ) -> dict[str, object]:
+        return {"keep": True, "reason_zh": "", "matched_signals": []}
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _runtime_with(
+    scheduler: _FakeScheduler,
+    engine: _FakeEngine,
+    summarizer: _FakeSummarizer,
+    github_readme_ai_filter: object | None = None,
+) -> RuntimeState:
     return RuntimeState(
         settings=object(),
         config_path=Path("radar.yaml"),
@@ -396,6 +487,7 @@ def _runtime_with(scheduler: _FakeScheduler, engine: _FakeEngine, summarizer: _F
         modelers_client=object(),
         gitcode_client=object(),
         report_summarizer=summarizer,
+        github_readme_ai_filter=github_readme_ai_filter,
     )
 
 
@@ -432,6 +524,19 @@ def test_apply_runtime_sets_github_readme_ai_filter_on_app_state() -> None:
     assert app.state.github_readme_ai_filter is github_readme_ai_filter
 
 
+def test_apply_runtime_closes_previous_github_readme_ai_filter() -> None:
+    app = create_app()
+    app.state.scheduler = _FakeScheduler()
+    app.state.engine = _FakeEngine()
+    app.state.report_summarizer = _FakeSummarizer()
+    old_readme_ai_filter = _FakeReadmeAIFilter()
+    app.state.github_readme_ai_filter = old_readme_ai_filter
+
+    apply_runtime(app, _runtime_with(_FakeScheduler(), _FakeEngine(), _FakeSummarizer()))
+
+    assert old_readme_ai_filter.closed is True
+
+
 def test_shutdown_runtime_closes_report_summarizer() -> None:
     app = create_app()
     scheduler = _FakeScheduler()
@@ -446,6 +551,19 @@ def test_shutdown_runtime_closes_report_summarizer() -> None:
     assert scheduler.stopped is True
     assert engine.disposed is True
     assert summarizer.closed is True
+
+
+def test_shutdown_runtime_closes_github_readme_ai_filter() -> None:
+    app = create_app()
+    app.state.scheduler = _FakeScheduler()
+    app.state.engine = _FakeEngine()
+    app.state.report_summarizer = _FakeSummarizer()
+    readme_ai_filter = _FakeReadmeAIFilter()
+    app.state.github_readme_ai_filter = readme_ai_filter
+
+    shutdown_runtime(app)
+
+    assert readme_ai_filter.closed is True
 
 
 def test_create_app_defaults_github_readme_ai_filter_to_none() -> None:

@@ -175,6 +175,7 @@ def test_export_pages_cli_runs(monkeypatch, tmp_path: Path) -> None:
     calls: list[tuple[Path, object]] = []
     disposed: list[bool] = []
     closed: list[bool] = []
+    readme_ai_filter_closed: list[bool] = []
 
     class FakeSummarizer:
         def close(self) -> None:
@@ -186,11 +187,16 @@ def test_export_pages_cli_runs(monkeypatch, tmp_path: Path) -> None:
         def dispose(self) -> None:
             disposed.append(True)
 
+    class FakeReadmeAIFilter:
+        def close(self) -> None:
+            readme_ai_filter_closed.append(True)
+
     class FakeRuntime:
         def __init__(self) -> None:
             self.repo = object()
             self.engine = FakeEngine()
             self.report_summarizer = report_summarizer
+            self.github_readme_ai_filter = FakeReadmeAIFilter()
 
     def fake_build_runtime(path: Path) -> FakeRuntime:
         return FakeRuntime()
@@ -216,6 +222,7 @@ def test_export_pages_cli_runs(monkeypatch, tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert calls == [(tmp_path / "site", report_summarizer)]
     assert closed == [True]
+    assert readme_ai_filter_closed == [True]
     assert disposed == [True]
     assert "pages exported to" in result.output
 

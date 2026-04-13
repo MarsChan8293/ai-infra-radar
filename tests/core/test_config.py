@@ -399,6 +399,46 @@ def test_run_job_closes_report_summarizer(
     assert "github_burst: executed" in result.output
 
 
+def test_run_job_closes_github_readme_ai_filter(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text((FIXTURES_DIR / "minimal.yaml").read_text())
+    closed: list[bool] = []
+
+    class FakeScheduler:
+        def known_jobs(self) -> list[str]:
+            return ["github_burst"]
+
+        def run(self, job_name: str) -> bool:
+            return True
+
+    class FakeReadmeAIFilter:
+        def close(self) -> None:
+            closed.append(True)
+
+    class FakeEngine:
+        def dispose(self) -> None:
+            pass
+
+    class FakeRuntime:
+        scheduler = FakeScheduler()
+        engine = FakeEngine()
+        report_summarizer = None
+        github_readme_ai_filter = FakeReadmeAIFilter()
+
+    monkeypatch.setattr("radar.cli.build_runtime", lambda path: FakeRuntime())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["run-job", "github_burst", "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0
+    assert closed == [True]
+
+
 # --- TDD: unknown keys must be rejected ---
 
 def test_unknown_top_level_key_raises(tmp_path: Path) -> None:
@@ -1037,7 +1077,7 @@ def test_github_ai_readme_filter_defaults_to_disabled(tmp_path: Path) -> None:
 def test_github_ai_readme_filter_enabled_with_provider_shape_is_valid(
     tmp_path: Path,
 ) -> None:
-    """ai_readme_filter accepts the spec-shaped placeholder provider config."""
+    """ai_readme_filter accepts the spec-shaped config when shared transport is present."""
     config_path = tmp_path / "radar.yaml"
     config_path.write_text(
         """
@@ -1061,6 +1101,10 @@ sources:
     enabled: false
   huggingface:
     enabled: false
+summarization:
+  enabled: false
+  base_url: https://example.com/v1
+  api_key: test-key
 """.strip()
     )
 
@@ -1071,6 +1115,42 @@ sources:
     assert settings.sources.github.ai_readme_filter.default_prompt == (
         "Does this README describe an AI infrastructure tool?"
     )
+    assert str(settings.summarization.base_url) == "https://example.com/v1"
+
+
+def test_github_ai_readme_filter_enabled_requires_summarization_transport(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+    ai_readme_filter:
+      enabled: true
+      model: gpt-4.1-mini
+      default_prompt: "Does this README describe an AI infrastructure tool?"
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+summarization:
+  enabled: false
+""".strip()
+    )
+
+    with pytest.raises(ValidationError, match="base_url"):
+        load_settings(config_path)
 
 
 def test_github_ai_readme_filter_enabled_without_model_raises(tmp_path: Path) -> None:

@@ -91,17 +91,10 @@ def manual_fetch_github(
     secondary_results: list[dict[str, Any]] = []
 
     for candidate in candidates:
-        if candidate["readme_status"] == "fetch_error":
-            errors.append(
-                {
-                    "full_name": candidate["full_name"],
-                    "stage": "readme_fetch",
-                    "message": candidate["readme_error"] or "Unknown README fetch failure.",
-                }
-            )
-            continue
-
         if candidate["readme_status"] != "ok":
+            error = _build_readme_fetch_error(candidate)
+            if error is not None:
+                errors.append(error)
             continue
 
         try:
@@ -138,7 +131,7 @@ def manual_fetch_github(
                 candidate["readme_status"] == "ok" for candidate in candidates
             ),
             "readme_failure_count": sum(
-                candidate["readme_status"] == "fetch_error" for candidate in candidates
+                candidate["readme_status"] != "ok" for candidate in candidates
             ),
             "secondary_keep_count": len(secondary_results),
         },
@@ -187,4 +180,18 @@ def _serialize_secondary_result(
         **_serialize_coarse_result(candidate),
         "reason_zh": second_pass["reason_zh"],
         "matched_signals": second_pass["matched_signals"],
+    }
+
+
+def _build_readme_fetch_error(candidate: dict[str, Any]) -> dict[str, str] | None:
+    if candidate["readme_status"] == "fetch_error":
+        message = candidate["readme_error"] or "Unknown README fetch failure."
+    elif candidate["readme_status"] == "missing_readme":
+        message = "README not found."
+    else:
+        return None
+    return {
+        "full_name": candidate["full_name"],
+        "stage": "readme_fetch",
+        "message": message,
     }

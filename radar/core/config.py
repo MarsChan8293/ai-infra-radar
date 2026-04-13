@@ -206,6 +206,20 @@ class Settings(BaseModel):
     sources: SourceSettings
     summarization: SummarizationSettings = SummarizationSettings()
 
+    @model_validator(mode="after")
+    def _require_summarization_transport_for_github_ai_readme_filter(self) -> "Settings":
+        if not self.sources.github.ai_readme_filter.enabled:
+            return self
+        if self.summarization.base_url is None:
+            raise ValueError(
+                "summarization.base_url is required when github ai_readme_filter is enabled"
+            )
+        if not self.summarization.api_key:
+            raise ValueError(
+                "summarization.api_key is required when github ai_readme_filter is enabled"
+            )
+        return self
+
 
 def load_settings(path: Path) -> Settings:
     data = yaml.safe_load(path.read_text())

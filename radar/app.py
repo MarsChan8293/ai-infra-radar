@@ -40,6 +40,7 @@ from radar.sources.gitcode.client import GitCodeClient
 from radar.sources.huggingface.client import HuggingFaceClient
 from radar.sources.github.client import expand_query_date_placeholders
 from radar.sources.github.pipeline import readme_matches_keywords
+from radar.sources.github.readme_ai_filter import OpenAIGitHubReadmeAIFilter
 from radar.sources.modelers.client import ModelersClient
 from radar.sources.modelscope.client import ModelScopeClient
 from radar.sources.official_pages.client import fetch_html
@@ -109,6 +110,31 @@ def _close_report_summarizer(summarizer: CloseableReportSummarizer | None) -> No
         summarizer.close()
 
 
+def _close_github_readme_ai_filter(readme_ai_filter: Any) -> None:
+    if readme_ai_filter is not None:
+        readme_ai_filter.close()
+
+
+def _build_github_readme_ai_filter(settings: Settings) -> Any:
+    readme_filter_settings = settings.sources.github.ai_readme_filter
+    if not readme_filter_settings.enabled:
+        return None
+
+    summarization_settings = settings.summarization
+    if summarization_settings.base_url is None or not summarization_settings.api_key:
+        raise RuntimeError(
+            "GitHub README AI filtering requires summarization.base_url and summarization.api_key."
+        )
+
+    return OpenAIGitHubReadmeAIFilter(
+        base_url=str(summarization_settings.base_url),
+        api_key=summarization_settings.api_key,
+        model=readme_filter_settings.model or "",
+        timeout_seconds=summarization_settings.timeout_seconds,
+        max_input_chars=summarization_settings.max_input_chars,
+    )
+
+
 def build_runtime(config_path: Path) -> RuntimeState:
     settings = load_settings(config_path)
     engine, session_factory = create_engine_and_session_factory(Path(settings.storage.path))
@@ -131,6 +157,7 @@ def build_runtime(config_path: Path) -> RuntimeState:
     gitcode_client = GitCodeClient(settings.sources.gitcode.token or "")
     scheduler = RadarScheduler(timezone=settings.app.timezone)
     report_summarizer = _build_report_summarizer(settings)
+    github_readme_ai_filter = _build_github_readme_ai_filter(settings)
 
     if settings.sources.official_pages.enabled:
 
@@ -326,6 +353,7 @@ def build_runtime(config_path: Path) -> RuntimeState:
         modelers_client=modelers_client,
         gitcode_client=gitcode_client,
         report_summarizer=report_summarizer,
+        github_readme_ai_filter=github_readme_ai_filter,
     )
 
 
@@ -339,6 +367,7 @@ def apply_runtime(app: FastAPI, runtime: RuntimeState) -> None:
         old_engine.dispose()
 
     _close_report_summarizer(getattr(app.state, "report_summarizer", None))
+    _close_github_readme_ai_filter(getattr(app.state, "github_readme_ai_filter", None))
 
     app.state.settings = runtime.settings
     app.state.config_path = runtime.config_path
@@ -364,6 +393,7 @@ def shutdown_runtime(app: FastAPI) -> None:
     if engine is not None:
         engine.dispose()
     _close_report_summarizer(getattr(app.state, "report_summarizer", None))
+    _close_github_readme_ai_filter(getattr(app.state, "github_readme_ai_filter", None))
 
 def create_app(lifespan: Any = None) -> FastAPI:
     app = FastAPI(title="AI Infra Radar", lifespan=lifespan)

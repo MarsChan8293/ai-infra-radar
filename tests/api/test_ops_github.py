@@ -398,6 +398,74 @@ def test_manual_fetch_reports_readme_fetch_errors() -> None:
     assert body["secondary_results"] == []
 
 
+def test_manual_fetch_counts_and_reports_missing_readme() -> None:
+    items = [
+        {
+            "full_name": "acme/serve-fast",
+            "name": "serve-fast",
+            "owner": {"login": "acme"},
+            "html_url": "https://github.com/acme/serve-fast",
+            "description": "High-throughput inference server",
+            "stargazers_count": 120,
+            "forks_count": 17,
+        },
+        {
+            "full_name": "acme/no-readme",
+            "name": "no-readme",
+            "owner": {"login": "acme"},
+            "html_url": "https://github.com/acme/no-readme",
+            "description": "Repository without a README",
+            "stargazers_count": 7,
+            "forks_count": 1,
+        },
+    ]
+    github_client = _FakeGitHubClient(
+        items,
+        readmes={
+            "acme/serve-fast": "README throughput docs",
+            "acme/no-readme": None,
+        },
+    )
+    ai_filter = _FakeReadmeAIFilter(
+        {
+            "acme/serve-fast": {
+                "keep": False,
+                "reason_zh": "README 不够相关。",
+                "matched_signals": [],
+            }
+        }
+    )
+    client = _make_client(github_client=github_client, github_readme_ai_filter=ai_filter)
+
+    response = client.post(
+        "/ops/github/manual-fetch",
+        json={
+            "start_date": "2026-04-01",
+            "end_date": "2026-04-10",
+            "query": "kv cache",
+            "readme_prompt": "Decide if this repository is relevant to inference systems.",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"] == {
+        "coarse_count": 2,
+        "readme_success_count": 1,
+        "readme_failure_count": 1,
+        "secondary_keep_count": 0,
+    }
+    assert body["errors"] == [
+        {
+            "full_name": "acme/no-readme",
+            "stage": "readme_fetch",
+            "message": "README not found.",
+        }
+    ]
+    assert body["coarse_results"][1]["readme_status"] == "missing_readme"
+    assert body["secondary_results"] == []
+
+
 
 def test_manual_fetch_fails_clearly_when_ai_filter_runtime_is_missing() -> None:
     github_client = _ExplodingGitHubClient()

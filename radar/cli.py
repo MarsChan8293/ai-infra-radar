@@ -19,6 +19,12 @@ _SOURCE_TO_JOB = {
 }
 
 
+def _close_github_readme_ai_filter(runtime: object) -> None:
+    readme_ai_filter = getattr(runtime, "github_readme_ai_filter", None)
+    if readme_ai_filter is not None:
+        readme_ai_filter.close()
+
+
 @cli.callback()
 def _main() -> None:
     pass
@@ -51,6 +57,7 @@ def run_job(
         summarizer = getattr(runtime, "report_summarizer", None)
         if summarizer is not None:
             summarizer.close()
+        _close_github_readme_ai_filter(runtime)
         runtime.engine.dispose()
 
 
@@ -107,6 +114,7 @@ def export_pages(
         typer.echo(f"pages exported to {output}")
     finally:
         runtime.report_summarizer.close()
+        _close_github_readme_ai_filter(runtime)
         runtime.engine.dispose()
 
 
