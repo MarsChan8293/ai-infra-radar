@@ -998,3 +998,143 @@ sources:
     )
     with pytest.raises(ValidationError):
         load_settings(config_path)
+
+
+# --- TDD: GitHub AI README filter config ---
+
+_GITHUB_AI_README_FILTER_BASE_YAML = """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+"""
+
+
+def test_github_ai_readme_filter_defaults_to_disabled(tmp_path: Path) -> None:
+    """ai_readme_filter defaults to disabled with no prompt when not specified."""
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(_GITHUB_AI_README_FILTER_BASE_YAML.strip())
+
+    settings = load_settings(config_path)
+
+    assert settings.sources.github.ai_readme_filter.enabled is False
+    assert settings.sources.github.ai_readme_filter.default_prompt is None
+
+
+def test_github_ai_readme_filter_enabled_with_prompt_is_valid(tmp_path: Path) -> None:
+    """ai_readme_filter enabled=true with a default_prompt is accepted."""
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+    ai_readme_filter:
+      enabled: true
+      default_prompt: "Does this README describe an AI infrastructure tool?"
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+""".strip()
+    )
+
+    settings = load_settings(config_path)
+
+    assert settings.sources.github.ai_readme_filter.enabled is True
+    assert settings.sources.github.ai_readme_filter.default_prompt == (
+        "Does this README describe an AI infrastructure tool?"
+    )
+
+
+def test_github_ai_readme_filter_enabled_without_prompt_raises(tmp_path: Path) -> None:
+    """ai_readme_filter enabled=true without default_prompt must raise ValidationError."""
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+    ai_readme_filter:
+      enabled: true
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+""".strip()
+    )
+
+    with pytest.raises(ValidationError, match="default_prompt"):
+        load_settings(config_path)
+
+
+def test_github_ai_readme_filter_enabled_with_blank_prompt_raises(
+    tmp_path: Path,
+) -> None:
+    """ai_readme_filter enabled=true with a blank default_prompt must raise."""
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text(
+        """
+app:
+  timezone: UTC
+storage:
+  path: ./data/radar.db
+channels:
+  webhook:
+    enabled: false
+  email:
+    enabled: false
+sources:
+  github:
+    enabled: false
+    ai_readme_filter:
+      enabled: true
+      default_prompt: "   "
+  official_pages:
+    enabled: false
+  huggingface:
+    enabled: false
+""".strip()
+    )
+
+    with pytest.raises(ValidationError, match="default_prompt"):
+        load_settings(config_path)
+
+
+def test_runtime_state_has_github_readme_ai_filter_field() -> None:
+    """RuntimeState dataclass must expose a github_readme_ai_filter field."""
+    import dataclasses
+    from radar.app import RuntimeState
+
+    field_names = {f.name for f in dataclasses.fields(RuntimeState)}
+    assert "github_readme_ai_filter" in field_names

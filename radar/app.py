@@ -58,6 +58,7 @@ class RuntimeState:
     modelers_client: Any
     gitcode_client: Any
     report_summarizer: CloseableReportSummarizer
+    github_readme_ai_filter: Any = None
 
 
 def _build_channels(settings: Settings) -> dict[str, Any]:

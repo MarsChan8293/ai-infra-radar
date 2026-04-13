@@ -52,6 +52,20 @@ class ChannelSettings(BaseModel):
     email: EmailChannelSettings
 
 
+class GitHubAIReadmeFilterSettings(BaseModel):
+    model_config = _FORBID
+    enabled: bool = False
+    default_prompt: str | None = None
+
+    @model_validator(mode="after")
+    def _require_prompt_when_enabled(self) -> "GitHubAIReadmeFilterSettings":
+        if self.enabled and (
+            self.default_prompt is None or not self.default_prompt.strip()
+        ):
+            raise ValueError("default_prompt is required when ai_readme_filter is enabled")
+        return self
+
+
 class GitHubReadmeFilterSettings(BaseModel):
     model_config = _FORBID
     enabled: bool = False
@@ -71,6 +85,7 @@ class GitHubSettings(BaseModel):
     queries: list[str] = []
     burst_threshold: float = 0.6
     readme_filter: GitHubReadmeFilterSettings = GitHubReadmeFilterSettings()
+    ai_readme_filter: GitHubAIReadmeFilterSettings = GitHubAIReadmeFilterSettings()
 
     @model_validator(mode="after")
     def _require_queries_when_enabled(self) -> "GitHubSettings":
