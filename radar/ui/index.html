@@ -43,6 +43,58 @@
           <div id="runtime-status" class="status-line">Idle</div>
           <pre id="runtime-result" class="detail-card">No config reload yet.</pre>
         </section>
+
+        <section class="panel panel-wide" data-panel="manual-github-fetch">
+          <div class="panel-header">
+            <h2>Manual GitHub Fetch</h2>
+          </div>
+          <form id="manual-fetch-form" class="manual-fetch-form">
+            <label class="field-group">
+              <span>Start date</span>
+              <input id="manual-fetch-start-date" name="start_date" type="date" required />
+            </label>
+            <label class="field-group">
+              <span>End date</span>
+              <input id="manual-fetch-end-date" name="end_date" type="date" required />
+            </label>
+            <label class="field-group field-group-wide">
+              <span>Query</span>
+              <input id="manual-fetch-query" name="query" type="text" required />
+            </label>
+            <label class="field-group field-group-wide">
+              <span>README AI prompt</span>
+              <textarea
+                id="manual-fetch-readme-prompt"
+                name="readme_prompt"
+                rows="4"
+                placeholder="Leave blank to use the runtime default prompt."
+              ></textarea>
+            </label>
+            <div class="manual-fetch-actions">
+              <button id="manual-fetch-submit" type="submit">Run fetch</button>
+            </div>
+          </form>
+          <div id="manual-fetch-status" class="status-line">Idle</div>
+          <div id="manual-fetch-summary" class="detail-card">No manual fetch run yet.</div>
+          <div class="manual-fetch-results">
+            <section>
+              <h3>Coarse results</h3>
+              <div id="manual-fetch-coarse-results" class="manual-result-list">
+                No coarse results yet.
+              </div>
+            </section>
+            <section>
+              <h3>Second-pass results</h3>
+              <div id="manual-fetch-secondary-results" class="manual-result-list">
+                No second-pass results yet.
+              </div>
+            </section>
+            <section>
+              <h3>Errors</h3>
+              <div id="manual-fetch-errors" class="manual-result-list">No per-item errors.</div>
+            </section>
+          </div>
+        </section>
       </main>
     </div>
     <script src="/static/ops/app.js" defer></script>

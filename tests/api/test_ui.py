@@ -313,6 +313,241 @@ def _run_results_app_scenario(
     return json.loads(completed.stdout)
 
 
+def _run_ops_app_scenario(
+    *,
+    manual_response: dict,
+    extra_steps: str = "",
+    defer_manual_fetch: bool = False,
+) -> dict[str, object]:
+    node = shutil.which("node")
+    assert node is not None
+
+    script = textwrap.dedent(
+        f"""
+        const fs = require("fs");
+        const vm = require("vm");
+
+        class Element {{
+          constructor(tagName = "div", id = "") {{
+            this.tagName = tagName.toLowerCase();
+            this.id = id;
+            this.children = [];
+            this.listeners = {{}};
+            this._innerHTML = "";
+            this._textContent = "";
+            this.value = "";
+            this.href = "";
+            this.disabled = false;
+            this.dataset = {{}};
+            this.type = "";
+            this.className = "";
+          }}
+          appendChild(child) {{
+            this.children.push(child);
+            return child;
+          }}
+          addEventListener(name, handler) {{
+            (this.listeners[name] ||= []).push(handler);
+          }}
+          dispatchEvent(event) {{
+            event.preventDefault ||= (() => {{
+              event.defaultPrevented = true;
+            }});
+            event.target ||= this;
+            for (const handler of this.listeners[event.type] || []) {{
+              handler(event);
+            }}
+          }}
+          set innerHTML(value) {{
+            this._innerHTML = value;
+            this._textContent = "";
+            this.children = [];
+          }}
+          get innerHTML() {{
+            if (this._innerHTML) {{
+              return this._innerHTML;
+            }}
+            if (this.children.length) {{
+              return this.children.map((child) => child.outerHTML).join("");
+            }}
+            return this._textContent;
+          }}
+          set textContent(value) {{
+            this._textContent = value == null ? "" : String(value);
+            this._innerHTML = "";
+            this.children = [];
+          }}
+          get textContent() {{
+            if (this.children.length) {{
+              return this.children.map((child) => child.textContent).join("");
+            }}
+            return this._innerHTML || this._textContent;
+          }}
+          get outerHTML() {{
+            const attrs = [];
+            if (this.id) {{
+              attrs.push(` id="${{this.id}}"`);
+            }}
+            if (this.href) {{
+              attrs.push(` href="${{this.href}}"`);
+            }}
+            if (this.className) {{
+              attrs.push(` class="${{this.className}}"`);
+            }}
+            if (this.disabled) {{
+              attrs.push(" disabled");
+            }}
+            if (this.type) {{
+              attrs.push(` type="${{this.type}}"`);
+            }}
+            const content = this.innerHTML;
+            return `<${{this.tagName}}${{attrs.join("")}}>${{content}}</${{this.tagName}}>`;
+          }}
+        }}
+
+        const elements = new Map();
+        function getElementById(id) {{
+          if (!elements.has(id)) {{
+            elements.set(id, new Element("div", id));
+          }}
+          return elements.get(id);
+        }}
+
+        const documentListeners = {{}};
+        const document = {{
+          getElementById,
+          createElement(tagName) {{
+            return new Element(tagName);
+          }},
+          addEventListener(name, handler) {{
+            (documentListeners[name] ||= []).push(handler);
+          }},
+          dispatchEvent(event) {{
+            for (const handler of documentListeners[event.type] || []) {{
+              handler(event);
+            }}
+          }},
+        }};
+
+        function buildResponse(payload) {{
+          return {{
+            ok: true,
+            async json() {{
+              return JSON.parse(JSON.stringify(payload));
+            }},
+            async text() {{
+              return JSON.stringify(payload);
+            }},
+          }};
+        }}
+
+        const fetchCounts = {{}};
+        const manualResponse = {json.dumps(manual_response)};
+        const deferManualFetch = {json.dumps(defer_manual_fetch)};
+        let pendingManualFetch = null;
+        let lastManualRequest = null;
+
+        async function fetch(url, options = undefined) {{
+          fetchCounts[url] = (fetchCounts[url] || 0) + 1;
+          if (url === "/alerts") {{
+            return buildResponse({{ alerts: [] }});
+          }}
+          if (url === "/jobs") {{
+            return buildResponse({{ jobs: [] }});
+          }}
+          if (url === "/config/reload") {{
+            return buildResponse({{ status: "reloaded", jobs: [] }});
+          }}
+          if (url === "/ops/github/manual-fetch") {{
+            lastManualRequest = {{
+              url,
+              method: options?.method || "GET",
+              body: options?.body || null,
+            }};
+            if (deferManualFetch) {{
+              return new Promise((resolve) => {{
+                pendingManualFetch = resolve;
+              }});
+            }}
+            return buildResponse(manualResponse);
+          }}
+          throw new Error(`Unexpected fetch ${{url}}`);
+        }}
+
+        const window = {{
+          document,
+          addEventListener() {{}},
+          setTimeout(handler) {{
+            handler();
+            return 0;
+          }},
+        }};
+        window.__resolveManualFetch = async function resolveManualFetch() {{
+          if (!pendingManualFetch) {{
+            throw new Error("No deferred manual fetch queued");
+          }}
+          const resolve = pendingManualFetch;
+          pendingManualFetch = null;
+          resolve(buildResponse(manualResponse));
+          await Promise.resolve();
+        }};
+
+        const context = {{
+          window,
+          document,
+          fetch,
+          console,
+          setTimeout: window.setTimeout,
+        }};
+        context.globalThis = context;
+
+        const source = fs.readFileSync("radar/ui/app.js", "utf8");
+        vm.createContext(context);
+        vm.runInContext(source, context);
+
+        async function flush() {{
+          for (let index = 0; index < 6; index += 1) {{
+            await Promise.resolve();
+          }}
+        }}
+
+        const scenarioState = {{}};
+
+        async function main() {{
+          document.dispatchEvent({{ type: "DOMContentLoaded" }});
+          await flush();
+          {extra_steps}
+          await flush();
+          console.log(JSON.stringify({{
+            scenarioState,
+            fetchCounts,
+            lastManualRequest,
+            alerts: document.getElementById("alerts-list").innerHTML,
+            manualStatus: document.getElementById("manual-fetch-status").textContent,
+            manualButtonDisabled: document.getElementById("manual-fetch-submit").disabled,
+            manualSummary: document.getElementById("manual-fetch-summary").innerHTML,
+            coarseResults: document.getElementById("manual-fetch-coarse-results").innerHTML,
+            secondaryResults: document.getElementById("manual-fetch-secondary-results").innerHTML,
+            errorResults: document.getElementById("manual-fetch-errors").innerHTML,
+          }}));
+        }}
+
+        main().catch((error) => {{
+          console.error(error);
+          process.exit(1);
+        }});
+        """
+    )
+
+    completed = subprocess.run(
+        [node, "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(completed.stdout)
+
+
 def test_home_route_returns_html_shell() -> None:
     client = TestClient(create_app())
 
@@ -936,6 +1171,25 @@ def test_ops_shell_contains_alerts_jobs_and_runtime_controls() -> None:
     assert 'id="reload-config"' in response.text
 
 
+def test_ops_shell_contains_manual_github_fetch_controls() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/ops")
+
+    assert response.status_code == 200
+    assert 'data-panel="manual-github-fetch"' in response.text
+    assert 'id="manual-fetch-form"' in response.text
+    assert 'id="manual-fetch-start-date"' in response.text
+    assert 'id="manual-fetch-end-date"' in response.text
+    assert 'id="manual-fetch-query"' in response.text
+    assert 'id="manual-fetch-readme-prompt"' in response.text
+    assert 'id="manual-fetch-submit"' in response.text
+    assert 'id="manual-fetch-summary"' in response.text
+    assert 'id="manual-fetch-coarse-results"' in response.text
+    assert 'id="manual-fetch-secondary-results"' in response.text
+    assert 'id="manual-fetch-errors"' in response.text
+
+
 def test_ops_script_contains_jobs_and_reload_api_wiring() -> None:
     client = TestClient(create_app())
 
@@ -946,6 +1200,181 @@ def test_ops_script_contains_jobs_and_reload_api_wiring() -> None:
     assert 'fetchJson(`/jobs/run/${jobName}`' in response.text
     assert 'fetchJson("/config/reload"' in response.text
     assert "renderJobs" in response.text
+
+
+def test_ops_script_runs_manual_fetch_and_renders_results() -> None:
+    result = _run_ops_app_scenario(
+        manual_response={
+            "request": {
+                "query": '"speculative decoding" created:2026-04-01..2026-04-10',
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-10",
+                "readme_prompt": "",
+            },
+            "summary": {
+                "coarse_count": 2,
+                "readme_success_count": 1,
+                "readme_failure_count": 1,
+                "secondary_keep_count": 1,
+            },
+            "coarse_results": [
+                {
+                    "full_name": "acme/serve-fast",
+                    "description": "High-throughput inference server",
+                    "stars": 120,
+                    "forks": 17,
+                    "html_url": "https://github.com/acme/serve-fast",
+                    "readme_status": "ok",
+                },
+                {
+                    "full_name": "acme/missing-docs",
+                    "description": "Repository without a README",
+                    "stars": 8,
+                    "forks": 1,
+                    "html_url": "https://github.com/acme/missing-docs",
+                    "readme_status": "missing_readme",
+                },
+            ],
+            "secondary_results": [
+                {
+                    "full_name": "acme/serve-fast",
+                    "description": "High-throughput inference server",
+                    "stars": 120,
+                    "forks": 17,
+                    "html_url": "https://github.com/acme/serve-fast",
+                    "reason_zh": "README 明确描述了推理服务能力。",
+                    "matched_signals": ["serving", "throughput"],
+                }
+            ],
+            "errors": [
+                {
+                    "full_name": "acme/missing-docs",
+                    "stage": "readme_fetch",
+                    "message": "README not found.",
+                }
+            ],
+        },
+        defer_manual_fetch=True,
+        extra_steps=textwrap.dedent(
+            """
+            document.getElementById("manual-fetch-start-date").value = "2026-04-01";
+            document.getElementById("manual-fetch-end-date").value = "2026-04-10";
+            document.getElementById("manual-fetch-query").value = '"speculative decoding"';
+            document.getElementById("manual-fetch-readme-prompt").value = "";
+            document.getElementById("manual-fetch-form").dispatchEvent({ type: "submit" });
+            await flush();
+            scenarioState.beforeResolve = {
+              disabled: document.getElementById("manual-fetch-submit").disabled,
+              status: document.getElementById("manual-fetch-status").textContent,
+            };
+            await window.__resolveManualFetch();
+            await flush();
+            """
+        ),
+    )
+
+    assert result["fetchCounts"]["/alerts"] == 1
+    assert result["fetchCounts"]["/jobs"] == 1
+    assert result["fetchCounts"]["/ops/github/manual-fetch"] == 1
+    assert result["scenarioState"]["beforeResolve"] == {
+        "disabled": True,
+        "status": "Running manual GitHub fetch...",
+    }
+    assert json.loads(result["lastManualRequest"]["body"]) == {
+        "start_date": "2026-04-01",
+        "end_date": "2026-04-10",
+        "query": '"speculative decoding"',
+        "readme_prompt": "",
+    }
+    assert result["manualButtonDisabled"] is False
+    assert result["manualStatus"] == "Manual GitHub fetch completed."
+    assert "speculative decoding" in result["manualSummary"]
+    assert "Coarse count: 2" in result["manualSummary"]
+    assert "README successes: 1" in result["manualSummary"]
+    assert "README failures: 1" in result["manualSummary"]
+    assert "Second-pass keep count: 1" in result["manualSummary"]
+    assert "acme/serve-fast" in result["coarseResults"]
+    assert "https://github.com/acme/serve-fast" in result["coarseResults"]
+    assert "missing_readme" in result["coarseResults"]
+    assert "README 明确描述了推理服务能力。" in result["secondaryResults"]
+    assert "serving, throughput" in result["secondaryResults"]
+    assert "acme/missing-docs" in result["errorResults"]
+    assert "README not found." in result["errorResults"]
+    assert result["alerts"] == ""
+
+
+def test_ops_script_sanitizes_manual_fetch_repo_links() -> None:
+    result = _run_ops_app_scenario(
+        manual_response={
+            "request": {
+                "query": '"speculative decoding" created:2026-04-01..2026-04-10',
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-10",
+                "readme_prompt": "",
+            },
+            "summary": {
+                "coarse_count": 1,
+                "readme_success_count": 1,
+                "readme_failure_count": 0,
+                "secondary_keep_count": 0,
+            },
+            "coarse_results": [
+                {
+                    "full_name": "acme/suspicious-link",
+                    "description": "Unexpected URL scheme",
+                    "stars": 5,
+                    "forks": 1,
+                    "html_url": "javascript:alert(1)",
+                    "readme_status": "ok",
+                }
+            ],
+            "secondary_results": [],
+            "errors": [],
+        },
+        extra_steps=textwrap.dedent(
+            """
+            document.getElementById("manual-fetch-start-date").value = "2026-04-01";
+            document.getElementById("manual-fetch-end-date").value = "2026-04-10";
+            document.getElementById("manual-fetch-query").value = '"speculative decoding"';
+            document.getElementById("manual-fetch-form").dispatchEvent({ type: "submit" });
+            """
+        ),
+    )
+
+    assert 'href="#"' in result["coarseResults"]
+    assert "javascript:alert(1)" not in result["coarseResults"]
+
+
+def test_ops_script_handles_manual_fetch_payloads_without_result_lists() -> None:
+    result = _run_ops_app_scenario(
+        manual_response={
+            "request": {
+                "query": '"speculative decoding" created:2026-04-01..2026-04-10',
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-10",
+                "readme_prompt": "",
+            },
+            "summary": {
+                "coarse_count": 0,
+                "readme_success_count": 0,
+                "readme_failure_count": 0,
+                "secondary_keep_count": 0,
+            },
+        },
+        extra_steps=textwrap.dedent(
+            """
+            document.getElementById("manual-fetch-start-date").value = "2026-04-01";
+            document.getElementById("manual-fetch-end-date").value = "2026-04-10";
+            document.getElementById("manual-fetch-query").value = '"speculative decoding"';
+            document.getElementById("manual-fetch-form").dispatchEvent({ type: "submit" });
+            """
+        ),
+    )
+
+    assert result["manualStatus"] == "Manual GitHub fetch completed."
+    assert result["coarseResults"] == "No coarse results returned."
+    assert result["secondaryResults"] == "No repositories passed the second pass."
+    assert result["errorResults"] == "No per-item errors."
 
 
 def test_ui_route_is_removed() -> None:
