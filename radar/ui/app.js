@@ -223,6 +223,8 @@ async function runManualGitHubFetch(event) {
     renderManualFetchResults(manualFetchState);
     status.textContent = "Manual GitHub fetch completed.";
   } catch (error) {
+    manualFetchState = null;
+    renderManualFetchResults(manualFetchState);
     status.textContent = `Manual GitHub fetch failed: ${error.message}`;
   } finally {
     submitButton.disabled = false;

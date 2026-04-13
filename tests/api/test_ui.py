@@ -315,7 +315,8 @@ def _run_results_app_scenario(
 
 def _run_ops_app_scenario(
     *,
-    manual_response: dict,
+    manual_response: dict | None = None,
+    manual_responses: list[dict[str, object]] | None = None,
     extra_steps: str = "",
     defer_manual_fetch: bool = False,
 ) -> dict[str, object]:
@@ -441,11 +442,33 @@ def _run_ops_app_scenario(
           }};
         }}
 
+        function buildHttpResponse(spec) {{
+          const ok = spec?.ok !== false;
+          const payload = spec?.json;
+          const text = spec?.text;
+          return {{
+            ok,
+            async json() {{
+              return JSON.parse(JSON.stringify(payload));
+            }},
+            async text() {{
+              if (text !== undefined) {{
+                return String(text);
+              }}
+              return JSON.stringify(payload);
+            }},
+          }};
+        }}
+
         const fetchCounts = {{}};
         const manualResponse = {json.dumps(manual_response)};
+        const manualResponses =
+          {json.dumps(manual_responses)}
+          || [{{ ok: true, json: manualResponse }}];
         const deferManualFetch = {json.dumps(defer_manual_fetch)};
         let pendingManualFetch = null;
         let lastManualRequest = null;
+        let manualResponseIndex = 0;
 
         async function fetch(url, options = undefined) {{
           fetchCounts[url] = (fetchCounts[url] || 0) + 1;
@@ -464,12 +487,15 @@ def _run_ops_app_scenario(
               method: options?.method || "GET",
               body: options?.body || null,
             }};
+            const manualSpec =
+              manualResponses[Math.min(manualResponseIndex, manualResponses.length - 1)];
+            manualResponseIndex += 1;
             if (deferManualFetch) {{
               return new Promise((resolve) => {{
-                pendingManualFetch = resolve;
+                pendingManualFetch = {{ resolve, manualSpec }};
               }});
             }}
-            return buildResponse(manualResponse);
+            return buildHttpResponse(manualSpec);
           }}
           throw new Error(`Unexpected fetch ${{url}}`);
         }}
@@ -486,9 +512,9 @@ def _run_ops_app_scenario(
           if (!pendingManualFetch) {{
             throw new Error("No deferred manual fetch queued");
           }}
-          const resolve = pendingManualFetch;
+          const pending = pendingManualFetch;
           pendingManualFetch = null;
-          resolve(buildResponse(manualResponse));
+          pending.resolve(buildHttpResponse(pending.manualSpec));
           await Promise.resolve();
         }};
 
@@ -1374,6 +1400,70 @@ def test_ops_script_handles_manual_fetch_payloads_without_result_lists() -> None
     assert result["manualStatus"] == "Manual GitHub fetch completed."
     assert result["coarseResults"] == "No coarse results returned."
     assert result["secondaryResults"] == "No repositories passed the second pass."
+    assert result["errorResults"] == "No per-item errors."
+
+
+def test_ops_script_clears_stale_manual_fetch_results_after_failed_rerun() -> None:
+    first_response = {
+        "request": {
+            "query": '"speculative decoding" created:2026-04-01..2026-04-10',
+            "start_date": "2026-04-01",
+            "end_date": "2026-04-10",
+            "readme_prompt": "",
+        },
+        "summary": {
+            "coarse_count": 1,
+            "readme_success_count": 1,
+            "readme_failure_count": 0,
+            "secondary_keep_count": 1,
+        },
+        "coarse_results": [
+            {
+                "full_name": "acme/serve-fast",
+                "description": "High-throughput inference server",
+                "stars": 120,
+                "forks": 17,
+                "html_url": "https://github.com/acme/serve-fast",
+                "readme_status": "ok",
+            }
+        ],
+        "secondary_results": [
+            {
+                "full_name": "acme/serve-fast",
+                "description": "High-throughput inference server",
+                "stars": 120,
+                "forks": 17,
+                "html_url": "https://github.com/acme/serve-fast",
+                "reason_zh": "README 明确描述了推理服务能力。",
+                "matched_signals": ["serving"],
+            }
+        ],
+        "errors": [],
+    }
+    result = _run_ops_app_scenario(
+        manual_responses=[
+            {"ok": True, "json": first_response},
+            {"ok": False, "text": "backend down"},
+        ],
+        extra_steps=textwrap.dedent(
+            """
+            document.getElementById("manual-fetch-start-date").value = "2026-04-01";
+            document.getElementById("manual-fetch-end-date").value = "2026-04-10";
+            document.getElementById("manual-fetch-query").value = '"speculative decoding"';
+            document.getElementById("manual-fetch-form").dispatchEvent({ type: "submit" });
+            await flush();
+            document.getElementById("manual-fetch-form").dispatchEvent({ type: "submit" });
+            await flush();
+            """
+        ),
+    )
+
+    assert result["fetchCounts"]["/ops/github/manual-fetch"] == 2
+    assert result["manualStatus"] == "Manual GitHub fetch failed: backend down"
+    assert result["manualButtonDisabled"] is False
+    assert result["manualSummary"] == "No manual fetch run yet."
+    assert result["coarseResults"] == "No coarse results yet."
+    assert result["secondaryResults"] == "No second-pass results yet."
     assert result["errorResults"] == "No per-item errors."
 
 
