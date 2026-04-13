@@ -113,6 +113,13 @@ body {
   padding: 10px 12px;
 }
 
+#manual-fetch-config-yaml {
+  min-height: 320px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  line-height: 1.5;
+  white-space: pre;
+}
+
 .field-group-wide {
   grid-column: 1 / -1;
 }

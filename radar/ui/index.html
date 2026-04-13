@@ -50,24 +50,12 @@
           </div>
           <form id="manual-fetch-form" class="manual-fetch-form">
             <label class="field-group">
-              <span>Start date</span>
-              <input id="manual-fetch-start-date" name="start_date" type="date" required />
-            </label>
-            <label class="field-group">
-              <span>End date</span>
-              <input id="manual-fetch-end-date" name="end_date" type="date" required />
-            </label>
-            <label class="field-group field-group-wide">
-              <span>Query</span>
-              <input id="manual-fetch-query" name="query" type="text" required />
-            </label>
-            <label class="field-group field-group-wide">
-              <span>README AI prompt</span>
+              <span>GitHub config YAML</span>
               <textarea
-                id="manual-fetch-readme-prompt"
-                name="readme_prompt"
-                rows="4"
-                placeholder="Leave blank to use the runtime default prompt."
+                id="manual-fetch-config-yaml"
+                name="github_config_yaml"
+                rows="16"
+                spellcheck="false"
               ></textarea>
             </label>
             <div class="manual-fetch-actions">

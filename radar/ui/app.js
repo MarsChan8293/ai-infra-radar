@@ -76,6 +76,35 @@ function renderJobs(jobs) {
 }
 
 let manualFetchState = null;
+const DEFAULT_MANUAL_FETCH_CONFIG = `queries:
+  - '"speculative decoding" created:>@today-1d'
+  - '"kv cache" inference created:>@today-1d'
+  - '"attention" inference created:>@today-1d'
+  - '"prefix caching" llm created:>@today-1d'
+  - '"paged attention" created:>@today-1d'
+  - '"continuous batching" llm created:>@today-1d'
+  - '"flash decoding" llm created:>@today-1d'
+  - '"inference serving" llm created:>@today-1d'
+burst_threshold: 0.01
+readme_filter:
+  enabled: true
+  require_any:
+    - citation
+    - bibtex
+    - ICLR
+    - arXiv
+    - '@inproceedings{'
+    - '@article{'
+ai_readme_filter:
+  enabled: true
+  model: nvidia/nemotron-3-super-120b-a12b
+  default_prompt: |
+    Read this repository README and decide whether it is directly relevant
+    to AI inference, serving, runtime optimization, memory efficiency, or
+    model deployment infrastructure. Return JSON with:
+    - keep: boolean
+    - reason_zh: concise Chinese reason
+    - matched_signals: list of short strings`;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -119,8 +148,10 @@ function renderRepoListItem(repo, extraContent = "") {
 function renderManualFetchSummary(state) {
   const summary = state.summary || {};
   const request = state.request || {};
+  const queries = Array.isArray(request.queries) ? request.queries : [];
   return `
-    <div><strong>Expanded query:</strong> ${escapeHtml(request.query || "")}</div>
+    <div><strong>Expanded queries:</strong> ${escapeHtml(queries.join(" | "))}</div>
+    <div>Burst threshold: ${escapeHtml(request.burst_threshold ?? "")}</div>
     <div>Coarse count: ${formatCount(summary.coarse_count)}</div>
     <div>README successes: ${formatCount(summary.readme_success_count)}</div>
     <div>README failures: ${formatCount(summary.readme_failure_count)}</div>
@@ -206,6 +237,7 @@ async function runManualGitHubFetch(event) {
   event.preventDefault();
   const status = document.getElementById("manual-fetch-status");
   const submitButton = document.getElementById("manual-fetch-submit");
+  const configEditor = document.getElementById("manual-fetch-config-yaml");
   submitButton.disabled = true;
   status.textContent = "Running manual GitHub fetch...";
   try {
@@ -213,10 +245,7 @@ async function runManualGitHubFetch(event) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        start_date: document.getElementById("manual-fetch-start-date").value,
-        end_date: document.getElementById("manual-fetch-end-date").value,
-        query: document.getElementById("manual-fetch-query").value,
-        readme_prompt: document.getElementById("manual-fetch-readme-prompt").value,
+        github_config_yaml: configEditor.value,
       }),
     });
     manualFetchState = payload;
@@ -251,6 +280,10 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("refresh-alerts").addEventListener("click", loadAlerts);
   document.getElementById("reload-config").addEventListener("click", reloadConfig);
   document.getElementById("manual-fetch-form").addEventListener("submit", runManualGitHubFetch);
+  const configEditor = document.getElementById("manual-fetch-config-yaml");
+  if (configEditor && !configEditor.value.trim()) {
+    configEditor.value = DEFAULT_MANUAL_FETCH_CONFIG;
+  }
   renderManualFetchResults(manualFetchState);
   loadAlerts();
   loadJobs();

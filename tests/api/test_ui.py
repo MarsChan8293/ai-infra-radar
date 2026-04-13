@@ -1197,7 +1197,7 @@ def test_ops_shell_contains_alerts_jobs_and_runtime_controls() -> None:
     assert 'id="reload-config"' in response.text
 
 
-def test_ops_shell_contains_manual_github_fetch_controls() -> None:
+def test_ops_shell_contains_yaml_manual_github_fetch_editor() -> None:
     client = TestClient(create_app())
 
     response = client.get("/ops")
@@ -1205,15 +1205,14 @@ def test_ops_shell_contains_manual_github_fetch_controls() -> None:
     assert response.status_code == 200
     assert 'data-panel="manual-github-fetch"' in response.text
     assert 'id="manual-fetch-form"' in response.text
-    assert 'id="manual-fetch-start-date"' in response.text
-    assert 'id="manual-fetch-end-date"' in response.text
-    assert 'id="manual-fetch-query"' in response.text
-    assert 'id="manual-fetch-readme-prompt"' in response.text
+    assert 'id="manual-fetch-config-yaml"' in response.text
     assert 'id="manual-fetch-submit"' in response.text
     assert 'id="manual-fetch-summary"' in response.text
     assert 'id="manual-fetch-coarse-results"' in response.text
     assert 'id="manual-fetch-secondary-results"' in response.text
     assert 'id="manual-fetch-errors"' in response.text
+    assert 'id="manual-fetch-start-date"' not in response.text
+    assert 'id="manual-fetch-query"' not in response.text
 
 
 def test_ops_script_contains_jobs_and_reload_api_wiring() -> None:
@@ -1232,10 +1231,9 @@ def test_ops_script_runs_manual_fetch_and_renders_results() -> None:
     result = _run_ops_app_scenario(
         manual_response={
             "request": {
-                "query": '"speculative decoding" created:2026-04-01..2026-04-10',
-                "start_date": "2026-04-01",
-                "end_date": "2026-04-10",
-                "readme_prompt": "",
+                "queries": ['"speculative decoding" created:>@today-1d'],
+                "burst_threshold": 0.01,
+                "readme_prompt": "Use the pasted YAML prompt.",
             },
             "summary": {
                 "coarse_count": 2,
@@ -1283,10 +1281,17 @@ def test_ops_script_runs_manual_fetch_and_renders_results() -> None:
         defer_manual_fetch=True,
         extra_steps=textwrap.dedent(
             """
-            document.getElementById("manual-fetch-start-date").value = "2026-04-01";
-            document.getElementById("manual-fetch-end-date").value = "2026-04-10";
-            document.getElementById("manual-fetch-query").value = '"speculative decoding"';
-            document.getElementById("manual-fetch-readme-prompt").value = "";
+            document.getElementById("manual-fetch-config-yaml").value = `queries:
+              - '"speculative decoding" created:>@today-1d'
+            burst_threshold: 0.01
+            readme_filter:
+              enabled: true
+              require_any:
+                - citation
+            ai_readme_filter:
+              enabled: true
+              model: nvidia/nemotron-3-super-120b-a12b
+              default_prompt: Use the pasted YAML prompt.`;
             document.getElementById("manual-fetch-form").dispatchEvent({ type: "submit" });
             await flush();
             scenarioState.beforeResolve = {
@@ -1307,14 +1312,12 @@ def test_ops_script_runs_manual_fetch_and_renders_results() -> None:
         "status": "Running manual GitHub fetch...",
     }
     assert json.loads(result["lastManualRequest"]["body"]) == {
-        "start_date": "2026-04-01",
-        "end_date": "2026-04-10",
-        "query": '"speculative decoding"',
-        "readme_prompt": "",
+        "github_config_yaml": "queries:\n  - '\"speculative decoding\" created:>@today-1d'\nburst_threshold: 0.01\nreadme_filter:\n  enabled: true\n  require_any:\n    - citation\nai_readme_filter:\n  enabled: true\n  model: nvidia/nemotron-3-super-120b-a12b\n  default_prompt: Use the pasted YAML prompt.",
     }
     assert result["manualButtonDisabled"] is False
     assert result["manualStatus"] == "Manual GitHub fetch completed."
     assert "speculative decoding" in result["manualSummary"]
+    assert "Burst threshold: 0.01" in result["manualSummary"]
     assert "Coarse count: 2" in result["manualSummary"]
     assert "README successes: 1" in result["manualSummary"]
     assert "README failures: 1" in result["manualSummary"]
@@ -1333,10 +1336,9 @@ def test_ops_script_sanitizes_manual_fetch_repo_links() -> None:
     result = _run_ops_app_scenario(
         manual_response={
             "request": {
-                "query": '"speculative decoding" created:2026-04-01..2026-04-10',
-                "start_date": "2026-04-01",
-                "end_date": "2026-04-10",
-                "readme_prompt": "",
+                "queries": ['"speculative decoding" created:>@today-1d'],
+                "burst_threshold": 0.01,
+                "readme_prompt": "Use the pasted YAML prompt.",
             },
             "summary": {
                 "coarse_count": 1,
@@ -1359,9 +1361,8 @@ def test_ops_script_sanitizes_manual_fetch_repo_links() -> None:
         },
         extra_steps=textwrap.dedent(
             """
-            document.getElementById("manual-fetch-start-date").value = "2026-04-01";
-            document.getElementById("manual-fetch-end-date").value = "2026-04-10";
-            document.getElementById("manual-fetch-query").value = '"speculative decoding"';
+            document.getElementById("manual-fetch-config-yaml").value = `queries:
+              - test`;
             document.getElementById("manual-fetch-form").dispatchEvent({ type: "submit" });
             """
         ),
@@ -1375,10 +1376,9 @@ def test_ops_script_handles_manual_fetch_payloads_without_result_lists() -> None
     result = _run_ops_app_scenario(
         manual_response={
             "request": {
-                "query": '"speculative decoding" created:2026-04-01..2026-04-10',
-                "start_date": "2026-04-01",
-                "end_date": "2026-04-10",
-                "readme_prompt": "",
+                "queries": ['"speculative decoding" created:>@today-1d'],
+                "burst_threshold": 0.01,
+                "readme_prompt": "Use the pasted YAML prompt.",
             },
             "summary": {
                 "coarse_count": 0,
@@ -1389,9 +1389,8 @@ def test_ops_script_handles_manual_fetch_payloads_without_result_lists() -> None
         },
         extra_steps=textwrap.dedent(
             """
-            document.getElementById("manual-fetch-start-date").value = "2026-04-01";
-            document.getElementById("manual-fetch-end-date").value = "2026-04-10";
-            document.getElementById("manual-fetch-query").value = '"speculative decoding"';
+            document.getElementById("manual-fetch-config-yaml").value = `queries:
+              - test`;
             document.getElementById("manual-fetch-form").dispatchEvent({ type: "submit" });
             """
         ),
@@ -1406,10 +1405,9 @@ def test_ops_script_handles_manual_fetch_payloads_without_result_lists() -> None
 def test_ops_script_clears_stale_manual_fetch_results_after_failed_rerun() -> None:
     first_response = {
         "request": {
-            "query": '"speculative decoding" created:2026-04-01..2026-04-10',
-            "start_date": "2026-04-01",
-            "end_date": "2026-04-10",
-            "readme_prompt": "",
+            "queries": ['"speculative decoding" created:>@today-1d'],
+            "burst_threshold": 0.01,
+            "readme_prompt": "Use the pasted YAML prompt.",
         },
         "summary": {
             "coarse_count": 1,
@@ -1447,9 +1445,8 @@ def test_ops_script_clears_stale_manual_fetch_results_after_failed_rerun() -> No
         ],
         extra_steps=textwrap.dedent(
             """
-            document.getElementById("manual-fetch-start-date").value = "2026-04-01";
-            document.getElementById("manual-fetch-end-date").value = "2026-04-10";
-            document.getElementById("manual-fetch-query").value = '"speculative decoding"';
+            document.getElementById("manual-fetch-config-yaml").value = `queries:
+              - test`;
             document.getElementById("manual-fetch-form").dispatchEvent({ type: "submit" });
             await flush();
             document.getElementById("manual-fetch-form").dispatchEvent({ type: "submit" });
