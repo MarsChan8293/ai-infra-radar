@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import httpx
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
@@ -87,6 +88,48 @@ def test_validate_config_cli_command() -> None:
 
     assert result.exit_code == 0
     assert "config ok" in result.output
+
+
+def test_send_test_notification_webhook_posts_feishu_digest_item(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "radar.yaml"
+    config_path.write_text((FIXTURES_DIR / "minimal.yaml").read_text())
+    posted: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    def fake_post(url: str, json: dict, timeout: int) -> FakeResponse:
+        posted["url"] = url
+        posted["json"] = json
+        posted["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["send-test-notification", "webhook", "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0
+    assert posted["url"] == "https://example.com/webhook"
+    assert posted["timeout"] == 10
+    assert posted["json"] == {
+        "event_type": "daily_digest_item",
+        "digest_type": "daily_digest",
+        "digest_count": 1,
+        "item_index": 1,
+        "alert_id": 0,
+        "alert_type": "test_notification",
+        "source": "radar",
+        "score": 1.0,
+        "title": "AI Infra Radar test notification",
+    }
 
 
 def test_load_settings_accepts_summarization_block(tmp_path: Path) -> None:

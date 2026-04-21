@@ -88,7 +88,17 @@ def send_test_notification(
             raise typer.Exit(1)
         import httpx
 
-        payload = {"text": "AI Infra Radar: test notification"}
+        payload = {
+            "event_type": "daily_digest_item",
+            "digest_type": "daily_digest",
+            "digest_count": 1,
+            "item_index": 1,
+            "alert_id": 0,
+            "alert_type": "test_notification",
+            "source": "radar",
+            "score": 1.0,
+            "title": "AI Infra Radar test notification",
+        }
         response = httpx.post(str(ch.url), json=payload, timeout=10)
         response.raise_for_status()
         typer.echo(f"test notification sent to {ch.url}")
