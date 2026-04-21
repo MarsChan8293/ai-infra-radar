@@ -76,6 +76,50 @@ def _build_channels(settings: Settings) -> dict[str, Any]:
     return channels
 
 
+def _build_daily_digest_webhook_payloads(payload: dict) -> list[dict]:
+    if payload.get("type") != "daily_digest":
+        return [payload]
+
+    digest_count = int(payload.get("count", 0))
+    return [
+        {
+            "event_type": "daily_digest_item",
+            "digest_type": "daily_digest",
+            "digest_count": digest_count,
+            "item_index": index,
+            **item,
+        }
+        for index, item in enumerate(payload.get("items", []), start=1)
+    ]
+
+
+def _dispatch_daily_digest_payload(
+    *,
+    dispatcher: AlertDispatcher,
+    payload: dict,
+    channels: dict[str, Any],
+) -> None:
+    webhook_url = channels.get("webhook")
+    other_channels = {
+        name: config for name, config in channels.items() if name != "webhook"
+    }
+
+    if webhook_url is not None:
+        for event in _build_daily_digest_webhook_payloads(payload):
+            dispatcher.dispatch_raw(
+                alert_payload=event,
+                channels={"webhook": webhook_url},
+                delivery_key_prefix=f"daily_digest:{event['item_index']}",
+            )
+
+    if other_channels:
+        dispatcher.dispatch_raw(
+            alert_payload=payload,
+            channels=other_channels,
+            delivery_key_prefix="daily_digest",
+        )
+
+
 def _build_email_sender(settings: Settings):
     if not settings.channels.email.enabled:
         return None
@@ -361,10 +405,10 @@ def build_runtime(config_path: Path) -> RuntimeState:
     daily_digest_channels = _build_channels(settings)
 
     def _dispatch_daily_digest(payload: dict) -> None:
-        dispatcher.dispatch_raw(
-            alert_payload=payload,
+        _dispatch_daily_digest_payload(
+            dispatcher=dispatcher,
+            payload=payload,
             channels=daily_digest_channels,
-            delivery_key_prefix="daily_digest",
         )
 
     def _run_daily_digest() -> int:
