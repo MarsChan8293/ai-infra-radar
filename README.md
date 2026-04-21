@@ -70,7 +70,7 @@ one Bitable row.
 ## Run the server
 
 ```bash
-RADAR_CONFIG=config/radar.yaml uvicorn radar.main:app --reload
+RADAR_CONFIG=~/.radar/config.yaml uvicorn radar.main:app --reload
 ```
 
 Key endpoints:
@@ -92,7 +92,7 @@ Registered job names: `official_pages`, `github_burst`, `huggingface_models`, `m
 Start the server with a valid config:
 
 ```bash
-RADAR_CONFIG=config/radar.yaml uvicorn radar.main:app --reload
+RADAR_CONFIG=~/.radar/config.yaml uvicorn radar.main:app --reload
 ```
 
 Then visit:
@@ -136,7 +136,7 @@ OpenAI-compatible transport settings under `summarization`.
 Export the enriched reader as a static site:
 
 ```bash
-python3 -m radar.cli export-pages --config config/radar.yaml --output site
+python3 -m radar.cli export-pages --config ~/.radar/config.yaml --output site
 ```
 
 The exporter writes a GitHub Pages-friendly archive with:
@@ -308,28 +308,33 @@ curl -X POST http://localhost:8000/jobs/run/daily_digest
 
 ## CLI
 
+Note: The checked-in sample config (config/radar.yaml) is a minimal example that registers only the daily_digest and disables many optional sources. To run jobs or backfills for github, huggingface, modelscope, modelers, or gitcode you must create a local untracked config (example: ~/.radar/config.yaml) that enables those sources and contains any tokens. The examples below assume --config ~/.radar/config.yaml or RADAR_CONFIG=~/.radar/config.yaml.
+
 ```bash
 # Validate a config file without starting the server
-python3 -m radar.cli validate-config config/radar.yaml
+python3 -m radar.cli validate-config ~/.radar/config.yaml
 
 # Trigger a job from the CLI
-python3 -m radar.cli run-job github_burst --config config/radar.yaml
-python3 -m radar.cli run-job huggingface_models --config config/radar.yaml
-python3 -m radar.cli run-job modelscope_models --config config/radar.yaml
-python3 -m radar.cli run-job modelers_models --config config/radar.yaml
-python3 -m radar.cli run-job gitcode_repos --config config/radar.yaml
+# These commands assume you have a local untracked config at ~/.radar/config.yaml
+# with the desired sources enabled (the repository-tracked sample config is minimal
+# and registers only the daily_digest).
+python3 -m radar.cli run-job github_burst --config ~/.radar/config.yaml
+python3 -m radar.cli run-job huggingface_models --config ~/.radar/config.yaml
+python3 -m radar.cli run-job modelscope_models --config ~/.radar/config.yaml
+python3 -m radar.cli run-job modelers_models --config ~/.radar/config.yaml
+python3 -m radar.cli run-job gitcode_repos --config ~/.radar/config.yaml
 
 # Backfill one source
-python3 -m radar.cli backfill-source github --config config/radar.yaml
-python3 -m radar.cli backfill-source huggingface --config config/radar.yaml
-python3 -m radar.cli backfill-source modelscope --config config/radar.yaml
-python3 -m radar.cli backfill-source modelers --config config/radar.yaml
-python3 -m radar.cli backfill-source gitcode --config config/radar.yaml
+python3 -m radar.cli backfill-source github --config ~/.radar/config.yaml
+python3 -m radar.cli backfill-source huggingface --config ~/.radar/config.yaml
+python3 -m radar.cli backfill-source modelscope --config ~/.radar/config.yaml
+python3 -m radar.cli backfill-source modelers --config ~/.radar/config.yaml
+python3 -m radar.cli backfill-source gitcode --config ~/.radar/config.yaml
 
 # Send a test webhook
 # NOTE: Before running this, set your real Feishu webhook URL in a local-only copy
-# of config/radar.yaml (do NOT commit the real URL). Then run:
-python3 -m radar.cli send-test-notification webhook --config config/radar.yaml
+# of ~/.radar/config.yaml (do NOT commit the real URL). Then run:
+python3 -m radar.cli send-test-notification webhook --config ~/.radar/config.yaml
 ```
 
 This sends a sample `daily_digest_item` webhook payload.
