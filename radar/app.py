@@ -78,16 +78,16 @@ def _build_channels(settings: Settings) -> dict[str, Any]:
 
 def _build_daily_digest_webhook_payloads(payload: dict) -> list[dict]:
     if payload.get("type") != "daily_digest":
-        return [payload]
+        raise ValueError("_build_daily_digest_webhook_payloads requires a daily_digest payload")
 
     digest_count = int(payload.get("count", 0))
     return [
         {
+            **item,
             "event_type": "daily_digest_item",
             "digest_type": "daily_digest",
             "digest_count": digest_count,
             "item_index": index,
-            **item,
         }
         for index, item in enumerate(payload.get("items", []), start=1)
     ]
