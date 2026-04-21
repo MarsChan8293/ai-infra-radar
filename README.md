@@ -308,7 +308,7 @@ curl -X POST http://localhost:8000/jobs/run/daily_digest
 
 ## CLI
 
-Note: The checked-in sample config (config/radar.yaml) is a minimal example that registers only the daily_digest and disables many optional sources. To run jobs or backfills for github, huggingface, modelscope, modelers, or gitcode you must create a local untracked config (example: ~/.radar/config.yaml) that enables those sources and contains any tokens. The examples below assume --config ~/.radar/config.yaml or RADAR_CONFIG=~/.radar/config.yaml.
+Note: Start from `tests/fixtures/minimal.yaml` and save your real settings in a local untracked config (example: `~/.radar/config.yaml`). That minimal fixture keeps optional sources disabled, so the examples below assume your local config enables whichever jobs or backfills you want to run and includes any required tokens.
 
 ```bash
 # Validate a config file without starting the server
@@ -316,8 +316,7 @@ python3 -m radar.cli validate-config ~/.radar/config.yaml
 
 # Trigger a job from the CLI
 # These commands assume you have a local untracked config at ~/.radar/config.yaml
-# with the desired sources enabled (the repository-tracked sample config is minimal
-# and registers only the daily_digest).
+# created from tests/fixtures/minimal.yaml with the desired sources enabled.
 python3 -m radar.cli run-job github_burst --config ~/.radar/config.yaml
 python3 -m radar.cli run-job huggingface_models --config ~/.radar/config.yaml
 python3 -m radar.cli run-job modelscope_models --config ~/.radar/config.yaml
