@@ -25,10 +25,8 @@ channels:
   webhook:
     enabled: true
     url: https://pcnfy7i3x66l.feishu.cn/base/automation/webhook/event/WQoaaghK2wMQ33humAqcfrPnnBb
-
-When `daily_digest` is sent through the webhook channel, the runtime posts one
-webhook event per digest item so Feishu Base automation can map each event into
-one Bitable row.
+  email:
+    enabled: false
 
 sources:
   github:
@@ -325,9 +323,9 @@ python3 -m radar.cli backfill-source gitcode --config config/radar.yaml
 
 # Send a test webhook
 python3 -m radar.cli send-test-notification webhook --config config/radar.yaml
+```
 
 This sends a sample `daily_digest_item` webhook payload.
-```
 
 ## Run tests
 
