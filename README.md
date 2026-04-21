@@ -300,8 +300,7 @@ curl -X POST http://localhost:8000/jobs/run/gitcode_repos
 
 ### 7 · Daily digest
 
-Once per day the digest job ranks all stored alerts by score (descending) and
-dispatches a single summary payload to every enabled channel.
+Once per day the digest job ranks all stored alerts by score (descending) and dispatches channel-specific payloads: webhook channels receive one `daily_digest_item` event per digest item (suitable for row-per-item automations); non-webhook channels receive the full `daily_digest` summary payload once.
 
 ```bash
 curl -X POST http://localhost:8000/jobs/run/daily_digest
