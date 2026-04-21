@@ -24,8 +24,8 @@ storage:
 channels:
   webhook:
     enabled: true
-    # Placeholder webhook URL. DO NOT commit real webhook URLs. Put your real Feishu webhook
-    # in a local-only config file or environment (e.g., ~/.radar/config.yaml or an env var).
+    # Placeholder webhook URL. DO NOT commit real webhook URLs. Put your real Feishu webhook URL
+    # in a local-only (untracked) YAML config file (e.g., ~/.radar/config.yaml).
     url: https://your-feishu-webhook.example/base/automation/webhook/event/EXAMPLE
   email:
     enabled: false
