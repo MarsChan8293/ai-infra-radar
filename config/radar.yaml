@@ -1,0 +1,17 @@
+app:
+  timezone: UTC
+
+storage:
+  path: ./data/radar.db
+
+channels:
+  webhook:
+    enabled: true
+    url: https://pcnfy7i3x66l.feishu.cn/base/automation/webhook/event/WQoaaghK2wMQ33humAqcfrPnnBb
+  email:
+    enabled: false
+
+# Add other sections as needed for your environment
+sources:
+  github:
+    enabled: false
