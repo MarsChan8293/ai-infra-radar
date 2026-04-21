@@ -24,7 +24,9 @@ storage:
 channels:
   webhook:
     enabled: true
-    url: https://pcnfy7i3x66l.feishu.cn/base/automation/webhook/event/WQoaaghK2wMQ33humAqcfrPnnBb
+    # Placeholder webhook URL. DO NOT commit real webhook URLs. Put your real Feishu webhook
+    # in a local-only config file or environment (e.g., ~/.radar/config.yaml or an env var).
+    url: https://your-feishu-webhook.example/base/automation/webhook/event/EXAMPLE
   email:
     enabled: false
 
@@ -326,6 +328,8 @@ python3 -m radar.cli backfill-source modelers --config config/radar.yaml
 python3 -m radar.cli backfill-source gitcode --config config/radar.yaml
 
 # Send a test webhook
+# NOTE: Before running this, set your real Feishu webhook URL in a local-only copy
+# of config/radar.yaml (do NOT commit the real URL). Then run:
 python3 -m radar.cli send-test-notification webhook --config config/radar.yaml
 ```
 
