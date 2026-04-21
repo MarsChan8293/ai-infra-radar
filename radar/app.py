@@ -99,6 +99,8 @@ def _dispatch_daily_digest_payload(
     payload: dict,
     channels: dict[str, Any],
 ) -> None:
+    if payload.get("type") != "daily_digest":
+        raise ValueError("_dispatch_daily_digest_payload requires a daily_digest payload")
     webhook_url = channels.get("webhook")
     other_channels = {
         name: config for name, config in channels.items() if name != "webhook"

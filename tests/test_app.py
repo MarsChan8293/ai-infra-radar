@@ -143,6 +143,16 @@ def test_dispatch_daily_digest_non_digest_raises_value_error() -> None:
         )
 
 
+def test_dispatch_daily_digest_non_digest_raises_value_error_email_only() -> None:
+    dispatcher = RecordingDispatcher()
+    payload = {"type": "not_daily", "foo": "bar"}
+
+    with pytest.raises(ValueError):
+        _dispatch_daily_digest_payload(
+            dispatcher=dispatcher, payload=payload, channels={"email": True}
+        )
+
+
 def test_build_daily_digest_webhook_payloads_reserved_keys_win() -> None:
     payload = {
         "type": "daily_digest",
