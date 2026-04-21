@@ -61,6 +61,10 @@ sources:
       - gitcode
 ```
 
+When `daily_digest` is sent through the webhook channel, the runtime posts one
+webhook event per digest item so Feishu Base automation can map each event into
+one Bitable row.
+
 ## Run the server
 
 ```bash
