@@ -252,7 +252,13 @@ class RadarRepository:
                 if alert.source == "github":
                     item["repo_name"] = entity.display_name
                     item["repo_url"] = entity.url
-                    description = alert.reason.get("description") if isinstance(alert.reason, dict) else None
+                    # Prefer description from latest github observation normalized_payload
+                    obs = self.get_latest_observation_for_entity(entity.id, source="github")
+                    description = None
+                    if obs and isinstance(obs.normalized_payload, dict):
+                        description = obs.normalized_payload.get("description")
+                    if not description and isinstance(alert.reason, dict):
+                        description = alert.reason.get("description")
                     if description:
                         item["repo_description"] = description
                 items.append(item)

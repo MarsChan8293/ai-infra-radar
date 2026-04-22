@@ -362,13 +362,21 @@ def test_get_digest_candidate_items_includes_github_repo_metadata(tmp_path: Path
         display_name="vllm-project/vllm",
         url="https://github.com/vllm-project/vllm",
     )
+    observation = repo.record_observation(
+        entity_id=entity.id,
+        source="github",
+        raw_payload={},
+        normalized_payload={"description": "A high-throughput and memory-efficient inference and serving engine for LLMs"},
+        dedupe_key="github:vllm:obs",
+        content_hash="abc",
+    )
     alert = repo.create_alert(
         alert_type="github_burst",
         entity_id=entity.id,
         source="github",
         score=0.91,
         dedupe_key="digest:github:vllm",
-        reason={"description": "A high-throughput and memory-efficient inference and serving engine for LLMs"},
+        reason={"stars": 1234},
     )
 
     items = repo.get_digest_candidate_items()
