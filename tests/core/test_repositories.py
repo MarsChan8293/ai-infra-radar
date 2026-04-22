@@ -348,3 +348,39 @@ def test_job_run_finished_at_is_timezone_aware(tmp_path: Path) -> None:
     assert refreshed.finished_at is not None
     assert refreshed.finished_at.tzinfo is not None
     assert refreshed.finished_at.tzinfo == timezone.utc
+
+
+def test_get_digest_candidate_items_includes_github_repo_metadata(tmp_path: Path) -> None:
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repo",
+        canonical_name="github:vllm-project/vllm",
+        display_name="vllm-project/vllm",
+        url="https://github.com/vllm-project/vllm",
+    )
+    alert = repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.91,
+        dedupe_key="digest:github:vllm",
+        reason={"description": "A high-throughput and memory-efficient inference and serving engine for LLMs"},
+    )
+
+    items = repo.get_digest_candidate_items()
+
+    assert items == [
+        {
+            "alert_id": alert.id,
+            "alert_type": "github_burst",
+            "source": "github",
+            "score": 0.91,
+            "repo_name": "vllm-project/vllm",
+            "repo_url": "https://github.com/vllm-project/vllm",
+            "repo_description": "A high-throughput and memory-efficient inference and serving engine for LLMs",
+        }
+    ]

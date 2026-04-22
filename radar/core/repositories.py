@@ -230,3 +230,30 @@ class RadarRepository:
                     .limit(limit)
                 )
             )
+
+    def get_digest_candidate_items(self, *, limit: int = 50, window_hours: int = 24) -> list[dict]:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(Alert, Entity)
+                .join(Entity, Entity.id == Alert.entity_id)
+                .where(Alert.created_at >= cutoff)
+                .order_by(Alert.score.desc())
+                .limit(limit)
+            )
+            items: list[dict] = []
+            for alert, entity in rows:
+                item = {
+                    "alert_id": alert.id,
+                    "alert_type": alert.alert_type,
+                    "source": alert.source,
+                    "score": alert.score,
+                }
+                if alert.source == "github":
+                    item["repo_name"] = entity.display_name
+                    item["repo_url"] = entity.url
+                    description = alert.reason.get("description") if isinstance(alert.reason, dict) else None
+                    if description:
+                        item["repo_description"] = description
+                items.append(item)
+            return items
