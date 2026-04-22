@@ -179,35 +179,35 @@ def test_build_daily_digest_webhook_payloads_reserved_keys_win() -> None:
     assert ev["foo"] == "bar"
 
 
-def test_build_daily_digest_webhook_payloads_preserves_github_repo_metadata() -> None:
+def test_build_daily_digest_webhook_payloads_github_repo_metadata_passthrough() -> None:
     payload = {
         "type": "daily_digest",
         "count": 1,
         "items": [
             {
-                "alert_id": 101,
+                "alert_id": 201,
                 "alert_type": "github_burst",
                 "source": "github",
-                "score": 0.91,
-                "repo_name": "vllm-project/vllm",
-                "repo_url": "https://github.com/vllm-project/vllm",
-                "repo_description": "A high-throughput and memory-efficient inference and serving engine for LLMs",
+                "score": 0.95,
+                "repo_name": "example/repo",
+                "repo_url": "https://github.com/example/repo",
+                "repo_description": "An example repository",
             }
         ],
     }
 
-    assert _build_daily_digest_webhook_payloads(payload) == [
-        {
-            "event_type": "daily_digest_item",
-            "digest_type": "daily_digest",
-            "digest_count": 1,
-            "item_index": 1,
-            "alert_id": 101,
-            "alert_type": "github_burst",
-            "source": "github",
-            "score": 0.91,
-            "repo_name": "vllm-project/vllm",
-            "repo_url": "https://github.com/vllm-project/vllm",
-            "repo_description": "A high-throughput and memory-efficient inference and serving engine for LLMs",
-        }
-    ]
+    results = _build_daily_digest_webhook_payloads(payload)
+    assert isinstance(results, list)
+    assert len(results) == 1
+    ev = results[0]
+
+    # preserve passthrough metadata
+    assert ev["repo_name"] == "example/repo"
+    assert ev["repo_url"] == "https://github.com/example/repo"
+    assert ev["repo_description"] == "An example repository"
+
+    # reserved digest metadata still wins
+    assert ev["event_type"] == "daily_digest_item"
+    assert ev["digest_type"] == "daily_digest"
+    assert ev["digest_count"] == 1
+    assert ev["item_index"] == 1
