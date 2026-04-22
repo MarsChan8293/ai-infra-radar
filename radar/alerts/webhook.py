@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
+from datetime import timezone
+from email.utils import parsedate_to_datetime
 
 import httpx
 
@@ -10,16 +13,33 @@ _BACKOFF_BASE_SECONDS = 1.0
 
 
 def _rate_limit_delay_seconds(response: httpx.Response, attempt: int) -> float:
-    for header_name in ("x-ogw-ratelimit-reset", "retry-after"):
-        raw_value = response.headers.get(header_name)
-        if raw_value is None:
-            continue
+    raw_reset = response.headers.get("x-ogw-ratelimit-reset")
+    if raw_reset is not None:
         try:
-            parsed = float(raw_value)
+            parsed_reset = float(raw_reset)
         except ValueError:
-            continue
-        if parsed > 0:
-            return parsed
+            parsed_reset = None
+        if parsed_reset is not None and parsed_reset > 0:
+            return parsed_reset
+
+    raw_retry_after = response.headers.get("retry-after")
+    if raw_retry_after is not None:
+        try:
+            parsed_retry_after = float(raw_retry_after)
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(raw_retry_after)
+            except (TypeError, ValueError, IndexError, OverflowError):
+                retry_at = None
+            if retry_at is not None:
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=timezone.utc)
+                delay_seconds = (retry_at - datetime.now(timezone.utc)).total_seconds()
+                if delay_seconds > 0:
+                    return delay_seconds
+        else:
+            if parsed_retry_after > 0:
+                return parsed_retry_after
     return _BACKOFF_BASE_SECONDS * (2**attempt)
 
 
