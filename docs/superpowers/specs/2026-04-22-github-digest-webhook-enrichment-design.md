@@ -24,7 +24,8 @@ It does not change:
 1. Only GitHub digest items get the new repository fields.
 2. Enrichment happens while building the digest payload, not inside the webhook
    sender.
-3. Data comes from existing persisted `Entity` and `Alert.reason` fields.
+3. Data comes from existing persisted `Entity` fields plus the latest GitHub
+   `Observation.normalized_payload`.
 4. Missing GitHub metadata stays best-effort: absent values do not fail digest
    delivery.
 5. Existing digest webhook fan-out behavior stays unchanged.
@@ -51,7 +52,8 @@ This becomes the enrichment point. For each candidate alert:
 - if `alert.source == "github"`, load the related `Entity`
 - copy `entity.display_name` into `repo_name`
 - copy `entity.url` into `repo_url`
-- copy `alert.reason["description"]` into `repo_description` when present
+- copy the latest GitHub observation's
+  `normalized_payload["description"]` into `repo_description` when present
 
 The final digest payload remains transport-agnostic. `radar.app` keeps its
 existing responsibility: split one digest into one webhook event per item.
@@ -63,12 +65,12 @@ The repository layer already stores the required pieces:
 - `Alert.entity_id`
 - `Entity.display_name`
 - `Entity.url`
-- `Alert.reason`
+- GitHub `Observation.normalized_payload["description"]`
 
 Add a repository helper that returns digest candidates together with the related
-entity data needed for digest serialization. This avoids pushing SQL/session
-knowledge into the job layer and keeps enrichment data local to digest
-construction.
+entity data and the latest matching GitHub observation needed for digest
+serialization. This avoids pushing SQL/session knowledge into the job layer and
+keeps enrichment data local to digest construction.
 
 ## Payload shape
 
