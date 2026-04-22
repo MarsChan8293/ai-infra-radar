@@ -12,6 +12,19 @@ from radar.jobs.daily_digest import run_daily_digest_job
 # Helpers
 # ---------------------------------------------------------------------------
 
+class StubDigestRepository:
+    def __init__(self, items):
+        self._items = list(items)
+        self.get_digest_candidate_items_calls = 0
+
+    def get_digest_candidate_items(self):
+        self.get_digest_candidate_items_calls += 1
+        return list(self._items)
+
+    def get_digest_candidates(self):
+        raise AssertionError("run_daily_digest_job should use get_digest_candidate_items()")
+
+
 def _seed_alert(repo, score: float, *, n: int = 1):
     """Insert *n* alerts at *score* via the repository and return them."""
     alerts = []
@@ -94,6 +107,104 @@ def test_payload_items_contain_required_fields(repo) -> None:
     assert "score" in item
     assert "source" in item
     assert "alert_type" in item
+
+
+def test_run_daily_digest_job_uses_digest_candidate_items_and_dispatches_them_directly() -> None:
+    repo = StubDigestRepository(
+        [
+            {
+                "alert_id": 123,
+                "alert_type": "github_burst",
+                "source": "github",
+                "score": 0.91,
+                "repo_name": "vllm-project/vllm",
+                "repo_url": "https://github.com/vllm-project/vllm",
+                "repo_description": "A fast LLM serving engine",
+            }
+        ]
+    )
+    dispatched = []
+
+    result = run_daily_digest_job(repo, dispatch=dispatched.append)
+
+    assert result == 1
+    assert repo.get_digest_candidate_items_calls == 1
+    assert dispatched == [
+        {
+            "type": "daily_digest",
+            "count": 1,
+            "items": [
+                {
+                    "alert_id": 123,
+                    "alert_type": "github_burst",
+                    "source": "github",
+                    "score": 0.91,
+                    "repo_name": "vllm-project/vllm",
+                    "repo_url": "https://github.com/vllm-project/vllm",
+                    "repo_description": "A fast LLM serving engine",
+                }
+            ],
+        }
+    ]
+
+
+def test_github_digest_items_include_repo_metadata(repo) -> None:
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repository",
+        canonical_name="vllm-project/vllm",
+        display_name="vllm-project/vllm",
+        url="https://github.com/vllm-project/vllm",
+    )
+    repo.record_observation(
+        entity_id=entity.id,
+        source="github",
+        raw_payload={},
+        normalized_payload={"description": "A fast LLM serving engine"},
+        dedupe_key="github:vllm-project/vllm:obs",
+        content_hash="github:vllm-project/vllm:content",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.91,
+        dedupe_key="github:vllm-project/vllm:digest",
+        reason={"stars": 1234},
+    )
+    dispatched = []
+
+    run_daily_digest_job(repo, dispatch=dispatched.append)
+
+    assert dispatched[0]["items"][0]["repo_name"] == "vllm-project/vllm"
+    assert dispatched[0]["items"][0]["repo_url"] == "https://github.com/vllm-project/vllm"
+    assert dispatched[0]["items"][0]["repo_description"] == "A fast LLM serving engine"
+
+
+def test_non_github_digest_items_do_not_get_repo_metadata_fields(repo) -> None:
+    entity = repo.upsert_entity(
+        source="arxiv",
+        entity_type="paper",
+        canonical_name="arxiv:1234.5678",
+        display_name="Attention Is All You Need",
+        url="https://arxiv.org/abs/1234.5678",
+    )
+    repo.create_alert(
+        alert_type="paper_spike",
+        entity_id=entity.id,
+        source="arxiv",
+        score=0.84,
+        dedupe_key="arxiv:1234.5678:digest",
+        reason={"citations": 42},
+    )
+    dispatched = []
+
+    run_daily_digest_job(repo, dispatch=dispatched.append)
+
+    item = dispatched[0]["items"][0]
+    assert "repo_name" not in item
+    assert "repo_url" not in item
+    assert "repo_description" not in item
 
 
 def test_digest_excludes_alerts_older_than_24_hours(repo) -> None:
