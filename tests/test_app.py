@@ -177,3 +177,37 @@ def test_build_daily_digest_webhook_payloads_reserved_keys_win() -> None:
     assert ev["digest_count"] == 2
     assert ev["item_index"] == 1
     assert ev["foo"] == "bar"
+
+
+def test_build_daily_digest_webhook_payloads_preserves_github_repo_metadata() -> None:
+    payload = {
+        "type": "daily_digest",
+        "count": 1,
+        "items": [
+            {
+                "alert_id": 101,
+                "alert_type": "github_burst",
+                "source": "github",
+                "score": 0.91,
+                "repo_name": "vllm-project/vllm",
+                "repo_url": "https://github.com/vllm-project/vllm",
+                "repo_description": "A high-throughput and memory-efficient inference and serving engine for LLMs",
+            }
+        ],
+    }
+
+    assert _build_daily_digest_webhook_payloads(payload) == [
+        {
+            "event_type": "daily_digest_item",
+            "digest_type": "daily_digest",
+            "digest_count": 1,
+            "item_index": 1,
+            "alert_id": 101,
+            "alert_type": "github_burst",
+            "source": "github",
+            "score": 0.91,
+            "repo_name": "vllm-project/vllm",
+            "repo_url": "https://github.com/vllm-project/vllm",
+            "repo_description": "A high-throughput and memory-efficient inference and serving engine for LLMs",
+        }
+    ]
