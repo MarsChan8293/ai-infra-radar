@@ -234,15 +234,22 @@ class RadarRepository:
     def get_digest_candidate_items(self, *, limit: int = 50, window_hours: int = 24) -> list[dict]:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
         with self._session_factory() as session:
+            latest_github_payload = (
+                select(Observation.normalized_payload)
+                .where(Observation.entity_id == Entity.id, Observation.source == "github")
+                .order_by(Observation.observed_at.desc(), Observation.id.desc())
+                .limit(1)
+                .scalar_subquery()
+            )
             rows = session.execute(
-                select(Alert, Entity)
+                select(Alert, Entity, latest_github_payload.label("latest_github_payload"))
                 .join(Entity, Entity.id == Alert.entity_id)
                 .where(Alert.created_at >= cutoff)
                 .order_by(Alert.score.desc())
                 .limit(limit)
             )
             items: list[dict] = []
-            for alert, entity in rows:
+            for alert, entity, latest_github_payload in rows:
                 item = {
                     "alert_id": alert.id,
                     "alert_type": alert.alert_type,
@@ -252,11 +259,8 @@ class RadarRepository:
                 if alert.source == "github":
                     item["repo_name"] = entity.display_name
                     item["repo_url"] = entity.url
-                    # Prefer description from latest github observation normalized_payload
-                    obs = self.get_latest_observation_for_entity(entity.id, source="github")
-                    if obs and isinstance(obs.normalized_payload, dict):
-                        description = obs.normalized_payload.get("description")
-                        # Only source repo_description from the latest observation's normalized_payload
+                    if isinstance(latest_github_payload, dict):
+                        description = latest_github_payload.get("description")
                         if description is not None:
                             item["repo_description"] = description
                 items.append(item)

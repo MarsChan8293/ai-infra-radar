@@ -1,7 +1,8 @@
-import pytest
 from pathlib import Path
 from datetime import timezone
 
+import pytest
+from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError
 
 from radar.core.db import create_engine_and_session_factory, init_db
@@ -392,3 +393,59 @@ def test_get_digest_candidate_items_includes_github_repo_metadata(tmp_path: Path
             "repo_description": "A high-throughput and memory-efficient inference and serving engine for LLMs",
         }
     ]
+
+
+def test_get_digest_candidate_items_uses_latest_github_observation_description(
+    tmp_path: Path,
+) -> None:
+    engine, session_factory = create_engine_and_session_factory(tmp_path / "radar.db")
+    init_db(engine)
+    repo = RadarRepository(session_factory)
+
+    entity = repo.upsert_entity(
+        source="github",
+        entity_type="repo",
+        canonical_name="github:vllm-project/vllm",
+        display_name="vllm-project/vllm",
+        url="https://github.com/vllm-project/vllm",
+    )
+    repo.record_observation(
+        entity_id=entity.id,
+        source="github",
+        raw_payload={},
+        normalized_payload={"description": "Old description"},
+        dedupe_key="github:vllm:obs:1",
+        content_hash="abc",
+    )
+    repo.record_observation(
+        entity_id=entity.id,
+        source="github",
+        raw_payload={},
+        normalized_payload={"description": "New description"},
+        dedupe_key="github:vllm:obs:2",
+        content_hash="def",
+    )
+    repo.create_alert(
+        alert_type="github_burst",
+        entity_id=entity.id,
+        source="github",
+        score=0.91,
+        dedupe_key="digest:github:vllm",
+        reason={"stars": 1234},
+    )
+
+    statements: list[str] = []
+
+    def capture_sql(
+        conn, cursor, statement, parameters, context, executemany
+    ) -> None:
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", capture_sql)
+    try:
+        items = repo.get_digest_candidate_items()
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_sql)
+
+    assert items[0]["repo_description"] == "New description"
+    assert len(statements) == 1
