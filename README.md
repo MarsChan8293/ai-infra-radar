@@ -154,10 +154,10 @@ preserves any existing historical `reports/*.json` files already present in the
 output directory while refreshing the manifest, current daily reports, and the
 latest seven-day feed window.
 
-The repository workflow supports both **scheduled publishing** and **manual
-workflow dispatch**. Configure a `RADAR_CONFIG_YAML` repository secret so the
-workflow can build runtime settings, collect current source data, preserve the
-existing static archive, and deploy the refreshed site to GitHub Pages.
+The repository workflow supports **manual workflow dispatch**. Configure a
+`RADAR_CONFIG_YAML` repository secret so the workflow can build runtime
+settings, collect current source data, preserve the existing static archive, and
+deploy the refreshed site to GitHub Pages when triggered on demand.
 
 ## Summarization
 

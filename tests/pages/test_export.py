@@ -525,6 +525,13 @@ def test_readme_mentions_github_pages_export() -> None:
     assert "export-pages" in readme
 
 
+def test_readme_describes_manual_pages_publish() -> None:
+    readme = Path("README.md").read_text()
+
+    assert "manual workflow dispatch" in readme
+    assert "scheduled publishing" not in readme
+
+
 def test_pages_workflow_exists_and_supports_manual_publish() -> None:
     workflow = Path(".github/workflows/deploy-pages.yml")
 
